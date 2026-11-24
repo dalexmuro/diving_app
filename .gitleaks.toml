@@ -1,0 +1,52 @@
+title = "Diving App Gitleaks Security Config"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "database-connection-string"
+description = "Database connection string with embedded credentials"
+regex = '''(?i)(postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|mssql|amqp)://[a-z0-9._%+-]+:[^@\s'"]{3,}@[a-z0-9.-]+'''
+tags = ["database", "credentials"]
+
+[[rules]]
+id = "suunto-api-credentials"
+description = "Suunto API Subscription Key or Client Secret"
+regex = '''(?i)(ocp-apim-subscription-key|suunto[_-]?(?:client[_-]?secret|subscription[_-]?key|api[_-]?key))\s*[:=]\s*['"]?[a-z0-9._-]{16,}['"]?'''
+tags = ["suunto", "api-key"]
+
+[[rules]]
+id = "cloudflare-api-token"
+description = "Cloudflare API Token or Global Key"
+regex = '''(?i)(cloudflare[_-]?(?:api[_-]?token|api[_-]?key|secret))\s*[:=]\s*['"]?[a-z0-9_-]{20,}['"]?'''
+tags = ["cloudflare", "api-key"]
+
+[[rules]]
+id = "pii-email-address"
+description = "Personal email address detected"
+regex = '''(?i)\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b'''
+tags = ["pii", "email"]
+
+  [rules.allowlist]
+  regexes = [
+    '''(?i)@(example\.com|example\.org|test\.local|users\.noreply\.github\.com)\b''',
+  ]
+
+[[rules]]
+id = "pii-phone-number"
+description = "Personal phone number with explicit field context"
+regex = '''(?i)(?:phone|tel|telephone|telefono|mobile|cel)\s*[:=]\s*['"]?\+?[0-9][0-9\s\-().]{7,18}[0-9]['"]?'''
+tags = ["pii", "phone"]
+
+[allowlist]
+description = "Global allowlist for safe templates, installed skills, and binary dive logs"
+paths = [
+  '''^\.env\.example$''',
+  '''^\.agents/''',
+  '''^\.gitleaks\.toml$''',
+  '''^scripts/security/''',
+  '''\.fit$''',
+]
+regexes = [
+  '''(?i)(your_|changeme|placeholder|example|dummy|sample|xxx|<[^>]+>)''',
+]

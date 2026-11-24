@@ -1,0 +1,42 @@
+default_stages: [pre-commit]
+fail_fast: false
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ["--maxkb=2048"]
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-json
+      - id: end-of-file-fixer
+        exclude: \.fit$
+      - id: trailing-whitespace
+        exclude: \.fit$
+      - id: detect-private-key
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.2
+    hooks:
+      - id: gitleaks
+        name: Gitleaks (staging area secret scan)
+        args: ["--pre-commit", "--staged", "--verbose", "--redact", "--config=.gitleaks.toml"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.9
+    hooks:
+      - id: ruff
+        name: Ruff Python linter
+        args: ["--fix"]
+      - id: ruff-format
+        name: Ruff Python formatter
+
+  - repo: local
+    hooks:
+      - id: security-staging-gate
+        name: Custom Security & PII Gate (staging area)
+        entry: python scripts/security/check_staged_security.py --staged
+        language: python
+        pass_filenames: false
+        always_run: true

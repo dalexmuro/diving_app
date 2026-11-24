@@ -1,0 +1,89 @@
+name: Deploy to Cloudflare
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  security-check:
+    name: Verify Security Gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan Git history with Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Run repository security & PII policy gate
+        run: python scripts/security/check_staged_security.py --all-tracked
+
+  deploy-backend:
+    name: Deploy Cloudflare Worker & D1 Migrations
+    needs: security-check
+    runs-on: ubuntu-latest
+    if: ${{ vars.CLOUDFLARE_DEPLOY_ENABLED == 'true' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Run backend tests
+        working-directory: backend
+        run: npm test
+
+      - name: Apply D1 migrations and deploy Worker
+        working-directory: backend
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: d1 migrations apply diving-db --remote && wrangler deploy
+
+  deploy-web:
+    name: Build & Deploy Web PWA to Cloudflare Pages
+    needs: security-check
+    runs-on: ubuntu-latest
+    if: ${{ vars.CLOUDFLARE_DEPLOY_ENABLED == 'true' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build web PWA
+        working-directory: web
+        run: npm run build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy web/dist --project-name=diving-app

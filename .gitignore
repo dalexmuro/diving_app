@@ -1,0 +1,58 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.keystore
+*.jks
+
+# Local personal dive data & notes (never commit)
+local-data/
+notas/
+*.fit
+
+# Node / Web / Cloudflare
+node_modules/
+dist/
+build/
+.wrangler/
+.dev.vars
+.cache/
+coverage/
+
+# Android / Gradle / Kotlin
+*.apk
+*.aab
+*.ap_
+*.dex
+.gradle/
+local.properties
+**/build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.hprof
+
+# IDEs & OS
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Local AI agent tooling & skill caches (never commit)
+.agent/
+.agents/
+.claude/
+.gemini/
+.hallmark/
+.impeccable/
+.github/agents/
+.github/hooks/
+.github/skills/

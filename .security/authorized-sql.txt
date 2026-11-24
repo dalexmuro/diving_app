@@ -1,0 +1,3 @@
+# Authorized SQL / DB files (one glob pattern per line)
+# Example: backend/migrations/*.sql
+backend/migrations/*.sql
