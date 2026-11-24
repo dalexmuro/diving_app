@@ -129,5 +129,6 @@ Configured in [.pre-commit-config.yaml](file:///c:/Users/dalex/Documents/Dev/div
 ## 6. Living Changelog
 
 - **Stage 1:** Configured `pre-commit`, Gitleaks, custom staging-area security & PII gate, and GitHub Actions `security-gates.yml`.
-- **Stage 2:** Initialized monorepo layout (`backend/`, `web/`, `android/`, `docs/`, `fixtures/`), gitignored `local-data/` and `*.fit`, and added `deploy-cloudflare.yml`.
+- **Stage 2:** Initialized monorepo layout (`backend/`, `web/`, `docs/`, `fixtures/`), gitignored `local-data/`, `notas/`, and `*.fit`, and added `deploy-cloudflare.yml`.
 - **Stage 3:** Authored professional English `README.md` and `docs/TECHNICAL_DOCUMENTATION.md`.
+- **Stage 4 (`STEP-01`):** Provisioned Cloudflare D1 (`diving-db`) and R2 (`diving-fit-archive`), authored `backend/migrations/0001_init.sql` (8 tables: `dive_sites`, `dives`, `dive_samples`, `gear_items`, `certifications`, `suunto_tokens`, `webauthn_credentials`, `user_settings`), applied schema to remote D1, and scaffolded TypeScript Worker + Vitest + ESLint (`npm audit --omit=dev`: 0 vulnerabilities).

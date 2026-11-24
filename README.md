@@ -103,5 +103,5 @@ This repository enforces strict security and quality gates before any code reach
 | **Stage 1** | Pre-commit Hooks (`pre-commit.com`), Gitleaks & CI Security Gates | Completed |
 | **Stage 2** | Monorepo directory structure & Cloudflare CI/CD workflow | Completed |
 | **Stage 3** | English `README.md` & living `TECHNICAL_DOCUMENTATION.md` | Completed |
-| **Stage 4** | Backend API, D1 schema, Suunto `.fit` parser & Cloud API sync | Pending |
+| **Stage 4** | Backend API, D1 schema, R2 archival, Suunto `.fit` parser & Cloud API sync | In Progress (`STEP-01` ready) |
 | **Stage 5** | Web PWA (ES/FR, interactive dive chart, dashboard, offline cache, Android installable) | Pending |

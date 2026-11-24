@@ -1,0 +1,17 @@
+name = "diving-app-api"
+main = "src/index.ts"
+compatibility_date = "2025-02-04"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "diving-db"
+database_id = "86ff6b54-f3fd-4d9b-9ffd-2db40ef894ea"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "FIT_BUCKET"
+bucket_name = "diving-fit-archive"
+
+[vars]
+ENVIRONMENT = "production"
