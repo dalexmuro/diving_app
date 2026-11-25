@@ -30,9 +30,35 @@ export function SitesPage({ isOffline }: SitesPageProps) {
   const formRef = useRef<HTMLFormElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
-  const draftMarkerRef = useRef<L.CircleMarker | null>(null);
+  const draftMarkerRef = useRef<L.Marker | null>(null);
 
   useEffect(() => () => searchAbortRef.current?.abort(), []);
+
+  // Debounced live search suggestions as user types (Google Maps style)
+  useEffect(() => {
+    if (isOffline) return;
+    const q = searchQuery.trim();
+    if (q.length < 3) {
+      setSearchResults([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void handleMapSearch(q);
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery, isOffline]);
+
+  function createPinIcon() {
+    return L.divIcon({
+      className: '',
+      iconSize: [28, 36],
+      iconAnchor: [14, 35],
+      html: `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36" style="filter:drop-shadow(0 2px 4px rgba(15,23,42,0.45));">
+        <path d="M14 1C6.82 1 1 6.82 1 14c0 9.5 13 21 13 21s13-11.5 13-21C27 6.82 21.18 1 14 1z" fill="#ea580c" stroke="#ffffff" stroke-width="2"/>
+        <circle cx="14" cy="14" r="4.5" fill="#ffffff"/>
+      </svg>`,
+    });
+  }
 
   function updateDraftPin(latitude: number, longitude: number, fly = false) {
     const map = mapRef.current;
@@ -40,27 +66,31 @@ export function SitesPage({ isOffline }: SitesPageProps) {
     if (draftMarkerRef.current) {
       draftMarkerRef.current.setLatLng([latitude, longitude]);
     } else {
-      draftMarkerRef.current = L.circleMarker([latitude, longitude], {
-        radius: 9,
-        color: '#ffffff',
-        weight: 2.5,
-        fillColor: '#ea580c',
-        fillOpacity: 0.95,
+      const marker = L.marker([latitude, longitude], {
+        icon: createPinIcon(),
+        draggable: true,
       }).addTo(map);
+      marker.on('dragend', () => {
+        const pos = marker.getLatLng();
+        setLat(pos.lat.toFixed(5));
+        setLng(pos.lng.toFixed(5));
+      });
+      draftMarkerRef.current = marker;
     }
     if (fly) {
       map.flyTo([latitude, longitude], 13, { duration: 0.7 });
     }
   }
 
-  async function handleMapSearch() {
-    if (isOffline || !searchQuery.trim()) return;
+  async function handleMapSearch(overrideQuery?: string) {
+    const q = (overrideQuery ?? searchQuery).trim();
+    if (isOffline || !q) return;
     searchAbortRef.current?.abort();
     const controller = new AbortController();
     searchAbortRef.current = controller;
     setSearching(true);
     try {
-      const found = await apiClient.searchLocation(searchQuery, controller.signal);
+      const found = await apiClient.searchLocation(q, controller.signal);
       if (!controller.signal.aborted) {
         setSearchResults(found);
       }
