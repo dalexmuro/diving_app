@@ -2,9 +2,15 @@ import { type ParsedFitDive } from '../fit/parser';
 import { type TelemetrySample, calculateAverageSac, calculateDiveSac } from '../services/metrics';
 
 export type RatingScale = 'poor' | 'normal' | 'good' | 'excellent';
-export type WaterType = 'salt' | 'fresh';
+export type WaterType = 'salt' | 'fresh' | 'pool';
 export type TankMaterial = 'steel' | 'aluminum' | 'composite';
 export type GasType = 'air' | 'nitrox' | 'trimix';
+export type DiveMode = 'autonomous' | 'guided' | 'training';
+export type TankConfig = 'single' | 'double' | 'sidemount';
+export type DayPeriod = 'day' | 'twilight' | 'night';
+export type SeaState = 'calm' | 'slight' | 'moderate' | 'rough';
+export type WeatherCondition = 'sunny' | 'cloudy' | 'rainy' | 'windy';
+export type CurrentStrength = 'none' | 'weak' | 'moderate' | 'strong';
 
 export interface DecoStop {
   depth_m: number;
@@ -26,7 +32,10 @@ export interface DiveRecord {
   avg_depth_m: number | null;
   min_temp_c: number | null;
   avg_temp_c: number | null;
+  log_number: number | null;
+  dive_mode: DiveMode | null;
   water_type: WaterType | null;
+  water_env?: string | null;
   gas_type: GasType;
   o2_pct: number;
   he_pct: number;
@@ -39,7 +48,12 @@ export interface DiveRecord {
   end_pressure_bar: number | null;
   tank_volume_l: number | null;
   tank_material: TankMaterial | null;
+  tank_config: TankConfig | null;
   ballast_kg: number | null;
+  day_period: DayPeriod | null;
+  sea_state: SeaState | null;
+  weather: WeatherCondition | null;
+  current_strength: CurrentStrength | null;
   site_id: string | null;
   site_name?: string | null;
   site_latitude?: number | null;
@@ -163,7 +177,10 @@ const EDITABLE_DIVE_COLUMNS = [
   'avg_depth_m',
   'min_temp_c',
   'avg_temp_c',
+  'log_number',
+  'dive_mode',
   'water_type',
+  'water_env',
   'gas_type',
   'o2_pct',
   'he_pct',
@@ -176,7 +193,12 @@ const EDITABLE_DIVE_COLUMNS = [
   'end_pressure_bar',
   'tank_volume_l',
   'tank_material',
+  'tank_config',
   'ballast_kg',
+  'day_period',
+  'sea_state',
+  'weather',
+  'current_strength',
   'site_id',
   'buddy',
   'buddies_json',
@@ -388,11 +410,14 @@ export function createD1Repository(db: D1Database) {
            ORDER BY d.started_at DESC`,
         )
         .all<DiveRecord>();
-      return results ?? [];
+      return (results ?? []).map((d) => ({
+        ...d,
+        water_type: d.water_env === 'pool' ? 'pool' : d.water_type,
+      }));
     },
 
     async getDiveById(id: string): Promise<DiveDetail | null> {
-      const dive = await db
+      const rawDive = await db
         .prepare(
           `SELECT d.*,
                   s.name AS site_name,
@@ -405,7 +430,11 @@ export function createD1Repository(db: D1Database) {
         )
         .bind(id)
         .first<DiveRecord>();
-      if (!dive) return null;
+      if (!rawDive) return null;
+      const dive: DiveRecord = {
+        ...rawDive,
+        water_type: rawDive.water_env === 'pool' ? 'pool' : rawDive.water_type,
+      };
 
       const { results: rawSamples } = await db
         .prepare(
@@ -597,6 +626,12 @@ export function createD1Repository(db: D1Database) {
       await ensureCatalogEntriesFromDive(patch);
 
       const normalized: Record<string, unknown> = { ...patch };
+      if (patch.water_type === 'pool') {
+        normalized.water_type = 'fresh';
+        normalized.water_env = 'pool';
+      } else if (patch.water_type === 'salt' || patch.water_type === 'fresh' || patch.water_type === null) {
+        normalized.water_env = null;
+      }
       if (Array.isArray(patch.tags)) {
         normalized.tags_json = JSON.stringify(patch.tags);
       }

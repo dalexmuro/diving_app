@@ -207,6 +207,11 @@ export function LogbookPage({
               >
                 <div className="min-w-0 space-y-1">
                   <div className="flex items-center gap-2">
+                    {dive.log_number != null && (
+                      <span className="px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-[11px] font-semibold text-sky-800 tabular-telemetry shrink-0">
+                        #{dive.log_number}
+                      </span>
+                    )}
                     <span className="font-semibold text-sm text-slate-900 truncate">
                       {dive.site_name || '—'}
                     </span>

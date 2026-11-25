@@ -1,9 +1,15 @@
 export type Language = 'es' | 'fr';
 export type UnitSystem = 'metric' | 'imperial';
 export type RatingScale = 'poor' | 'normal' | 'good' | 'excellent';
-export type WaterType = 'salt' | 'fresh';
+export type WaterType = 'salt' | 'fresh' | 'pool';
 export type TankMaterial = 'steel' | 'aluminum' | 'composite';
 export type GasType = 'air' | 'nitrox' | 'trimix';
+export type DiveMode = 'autonomous' | 'guided' | 'training';
+export type TankConfig = 'single' | 'double' | 'sidemount';
+export type DayPeriod = 'day' | 'twilight' | 'night';
+export type SeaState = 'calm' | 'slight' | 'moderate' | 'rough';
+export type WeatherCondition = 'sunny' | 'cloudy' | 'rainy' | 'windy';
+export type CurrentStrength = 'none' | 'weak' | 'moderate' | 'strong';
 
 export type AppView =
   | 'dashboard'
@@ -71,6 +77,8 @@ export interface DiveSummary {
   avg_depth_m: number | null;
   min_temp_c: number | null;
   avg_temp_c: number | null;
+  log_number?: number | null;
+  dive_mode?: DiveMode | null;
   water_type: WaterType | null;
   gas_type: GasType;
   o2_pct: number;
@@ -84,7 +92,12 @@ export interface DiveSummary {
   end_pressure_bar: number | null;
   tank_volume_l: number | null;
   tank_material: TankMaterial | null;
+  tank_config?: TankConfig | null;
   ballast_kg: number | null;
+  day_period?: DayPeriod | null;
+  sea_state?: SeaState | null;
+  weather?: WeatherCondition | null;
+  current_strength?: CurrentStrength | null;
   site_id: string | null;
   site_name?: string | null;
   site_latitude?: number | null;

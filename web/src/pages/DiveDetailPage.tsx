@@ -26,17 +26,23 @@ import {
 } from '../services/units';
 import {
   type Buddy,
+  type CurrentStrength,
+  type DayPeriod,
   type DecoStop,
   type DiveCenter,
   type DiveComputer,
   type DiveDetail,
+  type DiveMode,
   type DraftFitInit,
   type GasType,
   type GearItem,
   type RatingScale,
+  type SeaState,
+  type TankConfig,
   type TankMaterial,
   type TelemetrySample,
   type WaterType,
+  type WeatherCondition,
 } from '../types/domain';
 
 interface DiveDetailPageProps {
@@ -153,7 +159,14 @@ export function DiveDetailPage({
   );
   const [tankVolume, setTankVolume] = useState('');
   const [tankMaterial, setTankMaterial] = useState<TankMaterial | ''>('');
+  const [tankConfig, setTankConfig] = useState<TankConfig | ''>('');
   const [ballast, setBallast] = useState('');
+  const [logNumber, setLogNumber] = useState('');
+  const [diveMode, setDiveMode] = useState<DiveMode | ''>('');
+  const [dayPeriod, setDayPeriod] = useState<DayPeriod | ''>('');
+  const [seaState, setSeaState] = useState<SeaState | ''>('');
+  const [weather, setWeather] = useState<WeatherCondition | ''>('');
+  const [currentStrength, setCurrentStrength] = useState<CurrentStrength | ''>('');
   const [visibility, setVisibility] = useState<RatingScale | ''>('');
   const [buoyancy, setBuoyancy] = useState<RatingScale | ''>('');
   const [feeling, setFeeling] = useState<RatingScale | ''>('');
@@ -219,7 +232,14 @@ export function DiveDetailPage({
       setEndPressure(data.end_pressure_bar != null ? String(data.end_pressure_bar) : '');
       setTankVolume(data.tank_volume_l != null ? String(data.tank_volume_l) : '');
       setTankMaterial(data.tank_material ?? '');
+      setTankConfig(data.tank_config ?? '');
       setBallast(data.ballast_kg != null ? String(data.ballast_kg) : '');
+      setLogNumber(data.log_number != null ? String(data.log_number) : '');
+      setDiveMode(data.dive_mode ?? '');
+      setDayPeriod(data.day_period ?? '');
+      setSeaState(data.sea_state ?? '');
+      setWeather(data.weather ?? '');
+      setCurrentStrength(data.current_strength ?? '');
       setVisibility(data.visibility ?? '');
       setBuoyancy(data.buoyancy ?? '');
       setFeeling(data.feeling ?? '');
@@ -306,7 +326,14 @@ export function DiveDetailPage({
         end_pressure_bar: endPressure ? Number(endPressure) : null,
         tank_volume_l: tankVolume ? Number(tankVolume) : null,
         tank_material: tankMaterial || null,
+        tank_config: tankConfig || null,
         ballast_kg: ballast ? Number(ballast) : null,
+        log_number: logNumber ? Math.round(Number(logNumber)) : null,
+        dive_mode: diveMode || null,
+        day_period: dayPeriod || null,
+        sea_state: seaState || null,
+        weather: weather || null,
+        current_strength: currentStrength || null,
         visibility: visibility || null,
         buoyancy: buoyancy || null,
         feeling: feeling || null,
@@ -596,6 +623,38 @@ export function DiveDetailPage({
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('logNumber')}</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min="1"
+                step="1"
+                placeholder="51"
+                value={logNumber}
+                onChange={(e) => {
+                  setLogNumber(e.target.value);
+                  markDirty();
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm tabular-telemetry text-slate-900"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('diveMode')}</span>
+              <select
+                value={diveMode}
+                onChange={(e) => {
+                  setDiveMode(e.target.value as DiveMode | '');
+                  markDirty();
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+              >
+                <option value="">—</option>
+                <option value="autonomous">{t('modeAutonomous')}</option>
+                <option value="guided">{t('modeGuided')}</option>
+                <option value="training">{t('modeTraining')}</option>
+              </select>
+            </label>
+            <label className="space-y-1 text-xs font-medium text-slate-700">
               <span>{t('dateLabel')}</span>
               <input
                 type="date"
@@ -878,6 +937,22 @@ export function DiveDetailPage({
               </select>
             </label>
             <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('tankConfig')}</span>
+              <select
+                value={tankConfig}
+                onChange={(e) => {
+                  setTankConfig(e.target.value as TankConfig | '');
+                  markDirty();
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+              >
+                <option value="">—</option>
+                <option value="single">{t('tankSingle')}</option>
+                <option value="double">{t('tankDouble')}</option>
+                <option value="sidemount">{t('tankSidemount')}</option>
+              </select>
+            </label>
+            <label className="space-y-1 text-xs font-medium text-slate-700">
               <span>{t('ballast')} (kg)</span>
               <input
                 type="number"
@@ -903,6 +978,7 @@ export function DiveDetailPage({
                 <option value="">—</option>
                 <option value="salt">{t('waterSalt')}</option>
                 <option value="fresh">{t('waterFresh')}</option>
+                <option value="pool">{t('waterPool')}</option>
               </select>
             </label>
 
@@ -960,8 +1036,75 @@ export function DiveDetailPage({
               {t('subSectionConditions')}
             </h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <label className="space-y-1 text-xs font-medium text-slate-700">
-              <span>{t('visibility')}</span>
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('dayPeriod')}</span>
+                <select
+                  value={dayPeriod}
+                  onChange={(e) => {
+                    setDayPeriod(e.target.value as DayPeriod | '');
+                    markDirty();
+                  }}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+                >
+                  <option value="">—</option>
+                  <option value="day">{t('periodDay')}</option>
+                  <option value="twilight">{t('periodTwilight')}</option>
+                  <option value="night">{t('periodNight')}</option>
+                </select>
+              </label>
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('seaState')}</span>
+                <select
+                  value={seaState}
+                  onChange={(e) => {
+                    setSeaState(e.target.value as SeaState | '');
+                    markDirty();
+                  }}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+                >
+                  <option value="">—</option>
+                  <option value="calm">{t('seaCalm')}</option>
+                  <option value="slight">{t('seaSlight')}</option>
+                  <option value="moderate">{t('seaModerate')}</option>
+                  <option value="rough">{t('seaRough')}</option>
+                </select>
+              </label>
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('weather')}</span>
+                <select
+                  value={weather}
+                  onChange={(e) => {
+                    setWeather(e.target.value as WeatherCondition | '');
+                    markDirty();
+                  }}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+                >
+                  <option value="">—</option>
+                  <option value="sunny">{t('weatherSunny')}</option>
+                  <option value="cloudy">{t('weatherCloudy')}</option>
+                  <option value="rainy">{t('weatherRainy')}</option>
+                  <option value="windy">{t('weatherWindy')}</option>
+                </select>
+              </label>
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('currentStrength')}</span>
+                <select
+                  value={currentStrength}
+                  onChange={(e) => {
+                    setCurrentStrength(e.target.value as CurrentStrength | '');
+                    markDirty();
+                  }}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+                >
+                  <option value="">—</option>
+                  <option value="none">{t('currentNone')}</option>
+                  <option value="weak">{t('currentWeak')}</option>
+                  <option value="moderate">{t('currentModerate')}</option>
+                  <option value="strong">{t('currentStrong')}</option>
+                </select>
+              </label>
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('visibility')}</span>
               <select
                 value={visibility}
                 onChange={(e) => {
