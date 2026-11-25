@@ -4,10 +4,15 @@ import { AuthGate } from './components/AuthGate';
 import { PreferencesContext } from './i18n/I18nContext';
 import { TRANSLATIONS, type TranslationKey } from './i18n/translations';
 import { offlineCache } from './offline/cacheDb';
+import { CalculatorsPage } from './pages/CalculatorsPage';
+import { DashboardPage } from './pages/DashboardPage';
 import { DiveDetailPage } from './pages/DiveDetailPage';
+import { GearCertsPage } from './pages/GearCertsPage';
 import { LogbookPage } from './pages/LogbookPage';
+import { SettingsPage } from './pages/SettingsPage';
+import { SitesPage } from './pages/SitesPage';
+import { StatsPage } from './pages/StatsPage';
 import { apiClient } from './services/api';
-import { formatDepth, formatDuration, formatSac } from './services/units';
 import {
   type AppView,
   type DiveSummary,
@@ -154,67 +159,40 @@ export function App() {
           });
         }}
       >
-        {activeView === 'logbook' ? (
+        {activeView === 'dashboard' && (
+          <DashboardPage
+            stats={stats}
+            dives={dives}
+            onSelectDive={openDiveDetail}
+            onNavigate={setActiveView}
+          />
+        )}
+        {activeView === 'logbook' && (
           <LogbookPage
             dives={dives}
             isOffline={isOffline}
             onSelectDive={openDiveDetail}
             onCreateManualDive={handleCreateManualDive}
           />
-        ) : activeView === 'dive-detail' && selectedDiveId ? (
+        )}
+        {activeView === 'dive-detail' && selectedDiveId && (
           <DiveDetailPage
             diveId={selectedDiveId}
             isOffline={isOffline}
             onBack={() => setActiveView('logbook')}
             onSaved={loadInitialData}
           />
-        ) : (
-          <section className="space-y-6">
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-              {prefsValue.t(
-                activeView === 'statistics'
-                  ? 'navStatistics'
-                  : activeView === 'sites'
-                    ? 'navSites'
-                    : activeView === 'gear-certs'
-                      ? 'navGearCerts'
-                      : activeView === 'calculators'
-                        ? 'navCalculators'
-                        : activeView === 'settings'
-                          ? 'navSettings'
-                          : 'navDashboard',
-              )}
-            </h1>
-
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="panel-surface p-4 space-y-1">
-                <p className="text-xs font-medium text-slate-600">{prefsValue.t('totalDives')}</p>
-                <p className="text-2xl font-semibold tabular-telemetry text-slate-900">
-                  {stats?.totalDives ?? dives.length}
-                </p>
-              </div>
-              <div className="panel-surface p-4 space-y-1">
-                <p className="text-xs font-medium text-slate-600">
-                  {prefsValue.t('underwaterTime')}
-                </p>
-                <p className="text-2xl font-semibold tabular-telemetry text-slate-900">
-                  {formatDuration(stats?.totalDurationS ?? 0)}
-                </p>
-              </div>
-              <div className="panel-surface p-4 space-y-1">
-                <p className="text-xs font-medium text-slate-600">{prefsValue.t('maxDepth')}</p>
-                <p className="text-2xl font-semibold tabular-telemetry text-slate-900">
-                  {formatDepth(stats?.maxDepthM ?? null, unitSystem)}
-                </p>
-              </div>
-              <div className="panel-surface p-4 space-y-1">
-                <p className="text-xs font-medium text-slate-600">{prefsValue.t('avgSac')}</p>
-                <p className="text-2xl font-semibold tabular-telemetry text-slate-900">
-                  {formatSac(stats?.avgSacLMin ?? null, unitSystem)}
-                </p>
-              </div>
-            </div>
-          </section>
+        )}
+        {activeView === 'statistics' && <StatsPage stats={stats} />}
+        {activeView === 'sites' && <SitesPage isOffline={isOffline} />}
+        {activeView === 'gear-certs' && <GearCertsPage isOffline={isOffline} />}
+        {activeView === 'calculators' && <CalculatorsPage />}
+        {activeView === 'settings' && (
+          <SettingsPage
+            isOffline={isOffline}
+            onDataChanged={loadInitialData}
+            onOpenDive={openDiveDetail}
+          />
         )}
       </AppShell>
     </PreferencesContext.Provider>
