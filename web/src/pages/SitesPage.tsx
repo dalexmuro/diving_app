@@ -1,9 +1,9 @@
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { MapPin, Plus } from 'lucide-react';
+import { MapPin, Plus, Search, X } from 'lucide-react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { usePreferences } from '../i18n/I18nContext';
-import { apiClient } from '../services/api';
+import { type GeocodingResult, apiClient } from '../services/api';
 import { formatDepth } from '../services/units';
 import { type DiveSite } from '../types/domain';
 
@@ -20,10 +20,71 @@ export function SitesPage({ isOffline }: SitesPageProps) {
   const [lat, setLat] = useState('');
   const [lng, setLng] = useState('');
 
+  // Google Maps-style location search above the map
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<GeocodingResult[]>([]);
+  const searchAbortRef = useRef<AbortController | null>(null);
+
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
+  const draftMarkerRef = useRef<L.CircleMarker | null>(null);
+
+  useEffect(() => () => searchAbortRef.current?.abort(), []);
+
+  function updateDraftPin(latitude: number, longitude: number, fly = false) {
+    const map = mapRef.current;
+    if (!map) return;
+    if (draftMarkerRef.current) {
+      draftMarkerRef.current.setLatLng([latitude, longitude]);
+    } else {
+      draftMarkerRef.current = L.circleMarker([latitude, longitude], {
+        radius: 9,
+        color: '#ffffff',
+        weight: 2.5,
+        fillColor: '#ea580c',
+        fillOpacity: 0.95,
+      }).addTo(map);
+    }
+    if (fly) {
+      map.flyTo([latitude, longitude], 13, { duration: 0.7 });
+    }
+  }
+
+  async function handleMapSearch() {
+    if (isOffline || !searchQuery.trim()) return;
+    searchAbortRef.current?.abort();
+    const controller = new AbortController();
+    searchAbortRef.current = controller;
+    setSearching(true);
+    try {
+      const found = await apiClient.searchLocation(searchQuery, controller.signal);
+      if (!controller.signal.aborted) {
+        setSearchResults(found);
+      }
+    } catch {
+      // Ignore aborted requests
+    } finally {
+      if (!controller.signal.aborted) {
+        setSearching(false);
+      }
+    }
+  }
+
+  function handleSelectSearchResult(r: GeocodingResult) {
+    setLat(String(r.latitude));
+    setLng(String(r.longitude));
+    const parts = r.displayName
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!name.trim() && parts[0]) setName(parts[0]);
+    if (!country.trim() && parts.length > 1) setCountry(parts[parts.length - 1]);
+    updateDraftPin(r.latitude, r.longitude, true);
+    setSearchResults([]);
+  }
 
   async function reloadSites() {
     const res = await apiClient.fetchSites();
@@ -46,8 +107,11 @@ export function SitesPage({ isOffline }: SitesPageProps) {
 
     const layerGroup = L.layerGroup().addTo(map);
     map.on('click', (ev: L.LeafletMouseEvent) => {
-      setLat(ev.latlng.lat.toFixed(5));
-      setLng(ev.latlng.lng.toFixed(5));
+      const nextLat = Number(ev.latlng.lat.toFixed(5));
+      const nextLng = Number(ev.latlng.lng.toFixed(5));
+      setLat(String(nextLat));
+      setLng(String(nextLng));
+      updateDraftPin(nextLat, nextLng, false);
     });
 
     mapRef.current = map;
@@ -62,6 +126,8 @@ export function SitesPage({ isOffline }: SitesPageProps) {
 
     return () => {
       ro?.disconnect();
+      draftMarkerRef.current?.remove();
+      draftMarkerRef.current = null;
       map.remove();
       mapRef.current = null;
       markersLayerRef.current = null;
@@ -99,6 +165,9 @@ export function SitesPage({ isOffline }: SitesPageProps) {
     setCountry(site.country ?? '');
     setLat(site.latitude != null ? String(site.latitude) : '');
     setLng(site.longitude != null ? String(site.longitude) : '');
+    if (site.latitude != null && site.longitude != null) {
+      updateDraftPin(site.latitude, site.longitude, true);
+    }
     formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
@@ -108,6 +177,8 @@ export function SitesPage({ isOffline }: SitesPageProps) {
     setCountry('');
     setLat('');
     setLng('');
+    draftMarkerRef.current?.remove();
+    draftMarkerRef.current = null;
   }
 
   async function handleSaveSite(e: FormEvent) {
@@ -145,6 +216,71 @@ export function SitesPage({ isOffline }: SitesPageProps) {
               </button>
             )}
           </div>
+          {/* Google Maps-style place search bar */}
+          <div className="relative space-y-1.5">
+            <div className="flex gap-2">
+              <div className="relative flex-1 min-w-0">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void handleMapSearch();
+                    } else if (e.key === 'Escape') {
+                      setSearchResults([]);
+                    }
+                  }}
+                  placeholder={t('searchLocationPlaceholder')}
+                  className="w-full pl-9 pr-8 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    aria-label={t('cancel')}
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSearchResults([]);
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                disabled={searching}
+                onClick={() => void handleMapSearch()}
+                className="rounded-lg bg-[#0b192c] hover:bg-slate-800 active:bg-slate-900 disabled:opacity-50 text-white text-xs font-medium px-4 py-2 cursor-pointer shrink-0"
+              >
+                {searching ? '...' : t('searchLocationBtn')}
+              </button>
+            </div>
+
+            {searchResults.length > 0 && (
+              <ul
+                role="listbox"
+                className="absolute left-0 right-0 z-30 rounded-xl border border-slate-200 bg-white shadow-lg divide-y divide-slate-100 max-h-52 overflow-y-auto"
+              >
+                {searchResults.map((r) => (
+                  <li key={`${r.latitude},${r.longitude}`} role="option" aria-selected={false}>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectSearchResult(r)}
+                      className="w-full text-left px-3 py-2.5 text-xs text-slate-800 hover:bg-sky-50 active:bg-sky-100 flex items-start gap-2 cursor-pointer"
+                    >
+                      <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0 mt-0.5" />
+                      <span className="leading-snug">{r.displayName}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
           <div
             ref={mapContainerRef}
             className="w-full h-[clamp(220px,42dvh,420px)] rounded-lg overflow-hidden z-0"
