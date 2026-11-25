@@ -20,6 +20,7 @@ build/
 .dev.vars
 .cache/
 coverage/
+*.tsbuildinfo
 
 # Android / Gradle / Kotlin
 *.apk

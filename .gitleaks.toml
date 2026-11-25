@@ -30,6 +30,9 @@ regex = '''(?i)\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b'''
 tags = ["pii", "email"]
 
   [rules.allowlist]
+  paths = [
+    '''(^|/)package-lock\.json$''',
+  ]
   regexes = [
     '''(?i)@(example\.com|example\.org|test\.local|users\.noreply\.github\.com)\b''',
   ]

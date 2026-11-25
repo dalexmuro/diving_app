@@ -190,10 +190,13 @@ def check_content(path: str, data: bytes) -> list[str]:
     if ALLOWED_ENV_RE.search(norm) or norm == ".gitleaks.toml":
         return []
 
+    is_lockfile = Path(norm).name == "package-lock.json"
     text = data.decode("utf-8", errors="replace")
     errors: list[str] = []
     for line_no, line in enumerate(text.splitlines(), start=1):
         for rule_name, pattern in CONTENT_RULES:
+            if is_lockfile and "PII" in rule_name:
+                continue
             if pattern.search(line):
                 errors.append(f"{norm}:{line_no}: {rule_name}")
     return errors

@@ -47,3 +47,10 @@ repos:
         language: system
         files: ^backend/(src|tests)/.*\.ts$
         pass_filenames: false
+
+      - id: web-lint-typecheck
+        name: Web PWA ESLint & TypeScript check
+        entry: node -e "const{execSync}=require('child_process');execSync('npm run lint && npm run typecheck',{cwd:'web',stdio:'inherit'})"
+        language: system
+        files: ^web/(src|tests)/.*\.(ts|tsx)$
+        pass_filenames: false
