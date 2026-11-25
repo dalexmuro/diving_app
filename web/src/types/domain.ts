@@ -16,7 +16,6 @@ export type AppView =
   | 'logbook'
   | 'new-dive-choice'
   | 'dive-detail'
-  | 'statistics'
   | 'sites'
   | 'gear-certs'
   | 'calculators'

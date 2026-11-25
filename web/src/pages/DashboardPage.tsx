@@ -1,4 +1,5 @@
 import { ArrowRight, Plus } from 'lucide-react';
+import { DashboardCharts } from '../components/DashboardCharts';
 import { usePreferences } from '../i18n/I18nContext';
 import { formatDepth, formatDuration, formatSac, formatTemp } from '../services/units';
 import { type DiveSummary, type GlobalStats } from '../types/domain';
@@ -139,6 +140,9 @@ export function DashboardPage({
           {t('noDivesYet')}
         </div>
       )}
+
+      {/* Visual Statistics Charts (merged from Statistics page) */}
+      {stats && stats.totalDives > 0 && <DashboardCharts stats={stats} />}
     </section>
   );
 }

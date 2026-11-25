@@ -1,5 +1,4 @@
 import {
-  Activity,
   Award,
   BookOpen,
   Calculator,
@@ -61,7 +60,6 @@ export function AppShell({
   const primaryTabs: Array<{ id: AppView; label: string; icon: typeof LayoutDashboard }> = [
     { id: 'dashboard', label: t('navDashboard'), icon: LayoutDashboard },
     { id: 'logbook', label: t('navLogbook'), icon: BookOpen },
-    { id: 'statistics', label: t('navStatistics'), icon: Activity },
     { id: 'sites', label: t('navSites'), icon: Compass },
   ];
 
@@ -301,7 +299,7 @@ export function AppShell({
       {!hideBottomBar && (
         <nav
           aria-label="Mobile Primary"
-          className="sm:hidden fixed bottom-0 inset-x-0 z-20 bg-[#0b192c] text-slate-300 border-t border-slate-800 pb-[var(--safe-bottom)] pl-[var(--safe-left)] pr-[var(--safe-right)] grid grid-cols-4 select-none"
+          className="sm:hidden fixed bottom-0 inset-x-0 z-20 bg-[#0b192c] text-slate-300 border-t border-slate-800 pb-[var(--safe-bottom)] pl-[var(--safe-left)] pr-[var(--safe-right)] grid grid-cols-3 select-none"
         >
           {primaryTabs.map((item) => {
             const Icon = item.icon;
