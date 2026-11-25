@@ -528,7 +528,7 @@ export function DiveDetailPage({
             <input
               type="number"
               min="0"
-              step="0.1"
+              step="any"
               required
               value={maxDepthM}
               onChange={(e) => {
@@ -543,7 +543,7 @@ export function DiveDetailPage({
             <input
               type="number"
               min="0"
-              step="0.1"
+              step="any"
               value={avgDepthM}
               onChange={(e) => {
                 setAvgDepthM(e.target.value);
@@ -556,7 +556,7 @@ export function DiveDetailPage({
             <span>{t('minTemp')}</span>
             <input
               type="number"
-              step="0.5"
+              step="any"
               value={minTempC}
               onChange={(e) => {
                 setMinTempC(e.target.value);
@@ -569,7 +569,7 @@ export function DiveDetailPage({
             <span>{t('avgTemp')}</span>
             <input
               type="number"
-              step="0.5"
+              step="any"
               value={avgTempC}
               onChange={(e) => {
                 setAvgTempC(e.target.value);
@@ -741,7 +741,7 @@ export function DiveDetailPage({
             <span>{t('startPressure')} (bar)</span>
             <input
               type="number"
-              step="1"
+              step="any"
               value={startPressure}
               onChange={(e) => {
                 setStartPressure(e.target.value);
@@ -754,7 +754,7 @@ export function DiveDetailPage({
             <span>{t('endPressure')} (bar)</span>
             <input
               type="number"
-              step="1"
+              step="any"
               value={endPressure}
               onChange={(e) => {
                 setEndPressure(e.target.value);
@@ -767,7 +767,7 @@ export function DiveDetailPage({
             <span>{t('tankVolume')} (L)</span>
             <input
               type="number"
-              step="0.1"
+              step="any"
               value={tankVolume}
               onChange={(e) => {
                 setTankVolume(e.target.value);
@@ -796,7 +796,7 @@ export function DiveDetailPage({
             <span>{t('ballast')} (kg)</span>
             <input
               type="number"
-              step="0.5"
+              step="any"
               value={ballast}
               onChange={(e) => {
                 setBallast(e.target.value);
