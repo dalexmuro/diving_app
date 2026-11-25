@@ -1,159 +1,162 @@
 # Technical Documentation
 
-> **Living Document:** This specification is updated at the completion of every development stage to reflect the exact implemented architecture, schemas, APIs, and verification results.
+> **Living Document:** This specification reflects the implemented architecture, data model, binary `.fit` parser, security gates, and verification status of **Journal de plongée / Diario de buceo** — a full-stack personal dive platform engineered end-to-end with **Generative AI (agentic workflows)** under strict human review and automated CI/CD guardrails.
 
 ---
 
 ## 1. System Architecture
 
-The platform follows a **cloud-source-of-truth, offline-capable** architecture hosted entirely on **Cloudflare**, serving a responsive **Web PWA** installable on both desktop and Android:
+The platform follows a **cloud-source-of-truth, offline-capable** architecture hosted on **Cloudflare Workers with Static Assets**, serving both the REST API (`/api/*`) and the responsive **Web PWA** from a single origin (eliminating CORS complexity):
 
 ```text
-+-------------------+       Webhook / REST        +---------------------------+
-| Suunto Cloud API  | --------------------------> |  Cloudflare Workers API   |
-| (Suunto Nautic)   |   OAuth 2.0 + Sub Key       |  - FIT Binary Parser      |
-+-------------------+                             |  - Non-Destructive Merge  |
-                                                  |  - Google OAuth + JWT     |
-                                                  +-------------+-------------+
-                                                                |
-                                                   SQL          |  Raw .fit (opt.)
-                                                  +-------------v-------------+
-                                                  | Cloudflare D1 (SQLite)    |
-                                                  | + Cloudflare R2           |
-                                                  +-------------+-------------+
-                                                                |
-                                                       HTTPS REST / JSON
-                                                  +-------------v-------------+
-                                                  |   Web PWA (Pages)         |
-                                                  | - React + TypeScript      |
-                                                  | - IndexedDB + SW Cache    |
-                                                  | - Leaflet + ES / FR       |
-                                                  | - Android Chrome Install  |
-                                                  +---------------------------+
++-------------------+       Webhook / OAuth2       +-----------------------------+
+| Suunto Cloud API  | ---------------------------> |  Cloudflare Workers         |
+| (Suunto Nautic)   |   or Manual .fit Upload      |  - Binary FIT Parser        |
++-------------------+                              |  - Non-Destructive Merge    |
+                                                   |  - Google OIDC + Passkeys   |
+                                                   |  - Static Assets (Web PWA)  |
+                                                   +--------------+--------------+
+                                                                  |
+                                                     SQL          |  Raw .fit (R2)
+                                                   +--------------v--------------+
+                                                   | Cloudflare D1 (SQLite)      |
+                                                   | + Cloudflare R2             |
+                                                   +--------------+--------------+
+                                                                  |
+                                                         Same-Origin HTTPS JSON
+                                                   +--------------v--------------+
+                                                   |  Web PWA (React 19 + Vite)  |
+                                                   |  - Custom SVG Charts        |
+                                                   |  - IndexedDB + SW Cache     |
+                                                   |  - Leaflet OSM + ES / FR    |
+                                                   |  - Android Chrome Install   |
+                                                   +-----------------------------+
 ```
 
 ### Architectural Principles
-1. **Single Source of Truth:** Cloudflare D1 holds all canonical dive records, telemetry samples, dive sites, gear items, and certifications.
-2. **Non-Destructive Automated Sync:** Suunto webhooks and manual `"Sync now"` runs are strictly idempotent (keyed by `suunto_workout_key` / `.fit` SHA-256 hash). They only insert new dives or populate missing telemetry fields; user-edited logbook metadata is never overwritten.
-3. **Offline Read Availability:** The Web PWA maintains a local IndexedDB + Service Worker cache so all statistics, logbook entries, and dive profile curves remain viewable without network connectivity.
+1. **Single Source of Truth:** Cloudflare D1 stores all canonical dive records, telemetry samples, dive sites, catalogs (centers, buddies, computers, gear, certifications), and user preferences.
+2. **Non-Destructive Automated Sync:** Suunto webhooks and manual sync runs are strictly idempotent (keyed by `suunto_workout_key` / `.fit` SHA-256 hash). They insert new dives or populate missing telemetry fields without overwriting user-edited metadata.
+3. **Offline Read Availability:** The Web PWA maintains a local IndexedDB + Service Worker cache (with `Cache-Control: no-store, private` on `/api/*` and SW `runtimeCaching` restricted strictly to public OSM map tiles) so the dashboard, logbook, site dive lists, and cached dive profiles remain viewable offline.
 
 ---
 
 ## 2. Suunto Nautic `.fit` & Cloud API Analysis
 
-Verified against a real **Suunto Nautic** `.fit` export (`24,318 bytes`, FIT Protocol `32`, Profile `21176`):
+Verified against real **Suunto Nautic** `.fit` exports (FIT Protocol `32`, Profile `21176`):
 
 ### 2.1 Extracted FIT Messages & Fields
 | FIT Global Message | ID | Extracted Data | Notes |
 | :--- | :---: | :--- | :--- |
 | `file_id` / `device_info` | `0` / `23` | Product (`"Suunto Nautic"`), battery % at start | Identifies dive computer automatically |
-| `session` | `18` | `start_time`, `timestamp` (end), `total_elapsed_time` (ms), `sport` (`53`), `sub_sport` (`46`), `avg_depth` (mm), `max_depth` (mm), `avg_temperature` (°C), `min_temperature` (°C) | Depths are stored in **millimeters** (divide by `1000` for meters) |
+| `session` | `18` | `start_time`, `timestamp` (end), `total_elapsed_time` (ms), `sport` (`53`), `sub_sport` (`46`), `avg_depth` (mm), `max_depth` (mm), `avg_temperature` (°C), `min_temperature` (°C) | Depths are stored in **millimeters** (divided by `1000` for meters) |
 | `session` Developer Fields | `18` (`206`) | `description` (UTF-8 site name), `dive_number_in_series`, `surface_time` (s), `peak_epoc`, `max_depth` (float m) | Extracted via `field_description` (`206`) + `developer_data_id` (`207`) |
-| `record` | `20` | `timestamp` (1 Hz), `temperature` (`f_13`, 1 Hz), `depth` (`f_92`, mm, variable interval) | Depth is recorded at change intervals (~304 points in a 46-min dive) while temperature is 1 Hz |
+| `record` | `20` | `timestamp` (1 Hz), `temperature` (`f_13`, 1 Hz), `depth` (`f_92`, mm, variable interval) | Depth is recorded at change intervals while temperature is 1 Hz |
 | `dive_gas` | `259` | `oxygen_content` (%), `helium_content` (%), `status` | Maps to Air (`21% O2`), Nitrox (`>21% O2`), or Trimix (`He > 0%`) |
 | `dive_settings` | `258` | `gf_low`, `gf_high` (e.g. `40 / 85`) | Gradient factors stored for technical reference |
 
 ### 2.2 Known Gaps & Mitigation
-- **Tank Pressure (`tank_update` / `tank_summary`):** Not present in standard Suunto `.fit` exports (or when diving without a Tank POD). Mitigated via manual start/end pressure fields in the logbook and optional JSON/extensions inspection from Suunto Cloud API once API credentials are active.
-- **GPS Coordinates:** Not embedded in `.fit` `record` messages underwater. Mitigated via an interactive **OpenStreetMap/Leaflet** pin selector on the dive site form, with offline fallback to site rankings/lists.
-- **Ascent Rate:** Not precomputed in `.fit` records. Computed dynamically from consecutive depth samples:
+- **Tank Pressure (`tank_update` / `tank_summary`):** Absent when diving without a wireless Tank POD. Mitigated via manual start/end pressure inputs with automatic consumed-pressure and SAC calculation.
+- **GPS Coordinates:** Not embedded underwater in `.fit` `record` messages (surface entry GPS is available in companion `.gpx` exports). Mitigated via unified site search (saved catalog + OpenStreetMap Nominatim geocoding) and manual Lat/Lng entry on the dive form.
+- **Ascent Rate:** Computed dynamically from consecutive depth samples:
   $$\text{Ascent Rate (m/min)} = \frac{\text{depth}_{i-1} - \text{depth}_i}{\Delta t_i / 60}$$
-  Any segment where ascent rate exceeds the configured threshold (`15 m/min` default) is flagged and rendered in **red** on the interactive dive profile chart.
+  Segments exceeding the configured threshold (`15 m/min` default) are rendered in **red** on the interactive dive profile chart and surfaced in the inspected-point readout bar.
 
 ---
 
 ## 3. Domain Data Model & Calculations
 
-### 3.1 Dive Record Fields
-- **Automated / Telemetry (editable):** Date, start time, end time, duration, dive computer, max depth, avg depth, min/avg water temperature, depth/temp/pressure time-series curve, gas mix (Air / Nitrox / Trimix, `%O2`, `%He`), deco status & deco time, gradient factors, surface interval.
-- **Manual Logbook Metadata (protected from sync overwrite):** Start pressure, end pressure, consumed pressure (auto-calculated), tank capacity & material (e.g. `12L Steel`, `15L`, `11.1L Alu`), ballast/weight, water type (salt / fresh), dive site name & GPS coordinates, buddy, dive center, tags (`night`, `wreck`, `drift`, etc.), subjective ratings (**Visibility**, **Buoyancy**, **Feeling/Ressenti** using `poor` / `normal` / `good` / `excellent` scales), and free-text notes.
+### 3.1 Database Migrations (`backend/migrations/`)
+1. [`0001_init.sql`](../backend/migrations/0001_init.sql): Core tables (`dive_sites`, `dives`, `dive_samples`, `gear_items`, `certifications`, `suunto_tokens`, `webauthn_credentials`, `user_settings`).
+2. [`0002_catalogs_and_paliers.sql`](../backend/migrations/0002_catalogs_and_paliers.sql): Catalog tables (`dive_centers`, `buddies`, `dive_computers`), gear `brand`/`model`, `deco_stops_json`, `buddies_json`, `gear_used_json`, and center location/GPS fields.
+3. [`0003_ffessm_fields.sql`](../backend/migrations/0003_ffessm_fields.sql): FFESSM logbook fields (`log_number`, `dive_mode`, `tank_config`, `water_env`, `day_period`, `sea_state`, `weather`, `current_strength`).
+4. [`0004_dive_types.sql`](../backend/migrations/0004_dive_types.sql): `dive_types_json` storing entry type (`shore` / `boat`) and exploration types (`cave`, `wreck`, `photo_bio`, `night`, or custom values).
 
-### 3.2 SAC / RMV Calculation Rule
+### 3.2 Dive Record Fields & Behavior
+- **Automatic Dive Numbering:** New manual and `.fit` dives automatically receive the next sequential `log_number` (`MAX(COALESCE(MAX(log_number), 0), COUNT(*)) + 1`) on insert and display it as read-only in the UI.
+- **Read-First Detail View:** Opening an existing dive renders a clean read-only summary across 3 soft-blue tinted sections (Location & Dive Center, Basic Information + Deco Stops, Complementary Information). Clicking **Edit** unlocks the form; clicking **Delete** requires explicit modal confirmation.
+- **Unified Site Workflow:** Dive sites are created/edited strictly within a dive record using a 3-state selector (**Search** saved sites + OSM Nominatim → **Manual** name/lat/lng → **Locked** registered card with Edit/Clear controls).
+
+### 3.3 SAC / RMV Calculation Rule
 Surface Air Consumption (**SAC**) is computed per dive only when all required inputs exist (`start_pressure`, `end_pressure`, `tank_volume_liters`, `avg_depth_m`, `duration_min`):
 $$\text{SAC (L/min)} = \frac{(\text{P}_{\text{start}} - \text{P}_{\text{end}}) \times \text{V}_{\text{tank}}}{\left(\frac{\text{Depth}_{\text{avg}}}{10} + 1\right) \times \text{Duration}_{\text{min}}}$$
-Dives missing pressure or tank volume are **automatically excluded** from the global SAC average so they do not skew statistics.
+Dives missing pressure or tank volume are **automatically excluded** from the global SAC average.
 
-### 3.3 Navigation & Modules
-- **Primary Navigation (Web & Android):**
-  - **Home / Start:** `Dashboard` (KPIs, personal records, latest dive highlight).
-  - **Primary Tabs:** `Dashboard`, `Logbook` (Bitácora), `Statistics` (Estadísticas), `Sites` (Sitios).
-  - **Secondary / Utility Menu:** `Gear & Certifications` (simple lists without reminder alerts or photo uploads), `Nitrox / SAC Calculators`, and `Settings` (Language ES/FR, Units Metric/Imperial, Ascent threshold, `.fit` manual import, Sync now).
+### 3.4 Navigation & Modules
+- **Primary Tabs (3-tier adaptive: mobile bottom bar, tablet rail, desktop sidebar):**
+  - `Dashboard`: KPI cards, Latest Dive highlight, and 4 custom SVG visual charts (Dives per Month, Accumulated Hours, Depth Distribution, Seasonal Temperature + Gas Donut).
+  - `Logbook` (*Bitácora / Carnet*): FFESSM-inspired airy dive cards with collapsible multi-criteria filter panel (`≤ 20 m`, `20–40 m`, `> 40 m`, modality, entry type, exploration type, year, gas, text search).
+  - `Sites` (*Sitios / Sites*): View-only fixed OpenStreetMap/Leaflet map with crisp DOM markers, smooth zoom, clickable popups, and *View all sites* reset button, above independently scrollable site cards expanding inline to show and open dives.
+- **Secondary Menu:** `Equipment` (*Equipo / Équipements* — gear, certifications, centers, buddies, computers), `Calculators` (Nitrox MOD/EAD/Best Mix & SAC), and `Settings` (Language ES/FR, Units Metric/Imperial, Ascent threshold, Suunto API Connect/Sync, Passkey registration, PWA install, Sign Out).
 
-### 3.4 Authentication & Mobile Biometrics
-- **Primary Identity Provider:** **Google Sign-In (OAuth 2.0 / OIDC)** verified by the Cloudflare Worker against an allowlisted personal Google account (`APP_USER_EMAIL` / `sub` claim), issuing short-lived session JWTs + refresh tokens.
-- **Mobile Fingerprint Unlock:** After initial Google Sign-In, the PWA supports **WebAuthn / Passkey** biometric unlock on Android Chrome (fingerprint) for quick re-authentication.
-
-### 3.5 Units & Localization
-- **Units:** Stored canonically in **Metric** (`m`, `bar`, `°C`, `L`, `kg`) in D1 and converted dynamically in the client UI when **Imperial** (`ft`, `psi`, `°F`, `cu ft`, `lb`) is selected.
-- **Localization:** Full **Spanish (`es`)** and **French (`fr`)** translation dictionaries, including standardized subjective rating labels.
+### 3.5 Authentication, Biometrics & Localization
+- **Primary Identity Provider:** **Google Sign-In (OAuth 2.0 / OIDC)** verified by the Cloudflare Worker against an allowlisted personal account (`APP_USER_EMAIL`), issuing HttpOnly session JWTs.
+- **Biometric Unlock:** **WebAuthn / Passkey** (`ES256`) registration and login for fast fingerprint unlock on Android Chrome.
+- **Units & Localization:** Canonical **Metric** storage (`m`, `bar`, `°C`, `L`, `kg`) with client-side **Imperial** conversion, and 100% key-parity **Spanish (`es`)** / **French (`fr`)** dictionaries verified by automated unit tests.
 
 ---
 
 ## 4. Security Architecture & CI/CD
 
 ### 4.1 Pre-commit & Staging-Area Gates
-Configured in [.pre-commit-config.yaml](file:///c:/Users/dalex/Documents/Dev/diving_app/.pre-commit-config.yaml) and [.gitleaks.toml](file:///c:/Users/dalex/Documents/Dev/diving_app/.gitleaks.toml):
-- **Staging-Area Inspection:** [check_staged_security.py](file:///c:/Users/dalex/Documents/Dev/diving_app/scripts/security/check_staged_security.py) reads staged blobs directly from the Git index (`git show :<path>`), blocking:
-  - `.env` files (only `.env.example` is permitted).
-  - Unauthorized `.sql`, `.dump`, `.bak`, `.sqlite`, `.db` files (authorized D1 migrations must match [.security/authorized-sql.txt](file:///c:/Users/dalex/Documents/Dev/diving_app/.security/authorized-sql.txt)).
+Configured in [`.pre-commit-config.yaml`](../.pre-commit-config.yaml) and [`.gitleaks.toml`](../.gitleaks.toml):
+- **Staging-Area Inspection:** [`scripts/security/check_staged_security.py`](../scripts/security/check_staged_security.py) reads staged blobs directly from the Git index (`git show :<path>`), blocking:
+  - `.env` files (only `.env.example` is permitted) and `.dev.vars`.
+  - Unauthorized `.sql`, `.dump`, `.bak`, `.sqlite`, `.db` files (authorized migrations are allowlisted in [`.security/authorized-sql.txt`](../.security/authorized-sql.txt)).
   - Certificates and private keys (`.pem`, `.key`, `.p12`, `.pfx`, `.jks`, `.keystore`, `id_rsa`, etc.).
-  - Database backups/exports and private production configs (`secrets.*`, `wrangler.prod.*`, `.dev.vars`, `local.properties`).
-  - Database connection strings, hardcoded Suunto/Cloudflare/JWT secrets, and potential PII (emails, contextual phone numbers, personal IDs). *Documented False-Positive Exception:* auto-generated `package-lock.json` files are exempted strictly from the PII email pattern (e.g. upstream npm deprecation strings containing maintainer emails) while remaining scanned for secrets and connection strings.
-- **Local Real Data Isolation:** Personal `.fit` files reside in `local-data/` (gitignored).
+  - Database connection strings, hardcoded Suunto/Cloudflare/JWT secrets, and potential PII. *(Auto-generated `package-lock.json` files are exempted strictly from the PII email regex while remaining scanned for secrets and connection strings.)*
+- **Local Real Data Isolation:** Personal `.fit` / `.pdf` exports and local notes reside in `local-data/` and `notas/` (gitignored).
 
 ### 4.2 CI Security Gates & Deployment
-- **[security-gates.yml](file:///c:/Users/dalex/Documents/Dev/diving_app/.github/workflows/security-gates.yml):** Checks out full Git history (`fetch-depth: 0`) to run **Gitleaks** across all historical commits, enforces `check_staged_security.py --all-tracked`, runs `pre-commit run --all-files`, and runs **OSV-Scanner** + `npm audit --audit-level=high` (SCA).
-- **[dependabot.yml](file:///c:/Users/dalex/Documents/Dev/diving_app/.github/dependabot.yml):** Weekly automated dependency update checks for GitHub Actions and `backend/` / `web/` npm ecosystems.
-- **[deploy-cloudflare.yml](file:///c:/Users/dalex/Documents/Dev/diving_app/.github/workflows/deploy-cloudflare.yml):** Runs after security gates pass; applies D1 migrations, deploys the Worker, and deploys the Web PWA to Cloudflare Pages when `CLOUDFLARE_DEPLOY_ENABLED == 'true'`.
+- **[`security-gates.yml`](../.github/workflows/security-gates.yml):** Full Git history Gitleaks scan (`fetch-depth: 0`), `check_staged_security.py --all-tracked`, `pre-commit run --all-files`, backend & web unit tests, and `npm audit --omit=dev --audit-level=high`.
+- **[`dependabot.yml`](../.github/dependabot.yml):** Weekly automated dependency checks for GitHub Actions and `backend/` / `web/` npm packages.
+- **[`deploy-cloudflare.yml`](../.github/workflows/deploy-cloudflare.yml):** Triggered on push to `main`; gated on `security-check` and `vars.CLOUDFLARE_DEPLOY_ENABLED == 'true'`; tests & builds `web/`, tests `backend/`, applies remote D1 migrations, and deploys the unified Worker + Static Assets bundle via Wrangler v4.
 
 ---
 
-## 5. Independent Architectural Review & Trade-Offs
+## 5. Architectural Trade-Offs
 
 | Decision | Chosen Option | Alternatives | Trade-offs & Justification | What Could Change This Decision |
 | :--- | :--- | :--- | :--- | :--- |
-| **Cloud Backend & DB** | Cloudflare Workers + D1 + R2 | Supabase + Vercel, or Self-hosted VPS (Docker + Postgres) | Zero-cost free tier, global edge latency, single vendor for API/DB/Pages, and `/api/*` same-origin routing eliminates CORS. Trade-off: Cloudflare D1 SQLite dialect lock-in, mitigated by keeping SQL standard in migrations and isolating queries in `backend/src/db/`. | Multi-tenant SaaS growth requiring heavy relational analytics or Postgres-specific extensions. |
-| **Client Strategy** | Single Web PWA (React + Vite) | Separate Web + Native Android (Jetpack Compose) | One codebase serves desktop and Android Chrome (installable, offline IndexedDB + SW, WebAuthn fingerprint unlock), avoiding duplicate UI/testing overhead. | Need for direct Bluetooth/USB dive-computer sync from Android without Suunto App. |
-| **Offline Strategy** | Cloud D1 source of truth + IndexedDB read cache | Local-first CRDT / bidirectional offline writes | Eliminates complex multi-device conflict resolution while guaranteeing full offline consultation of stats and dive profiles on dive boats. | Requirement to edit/create dives offline on boats and auto-merge later. |
-| **Auth & Biometrics** | Google OAuth 2.0 + email allowlist + WebAuthn | Custom email/password or Cloudflare Access | Frictionless single-user security without storing passwords; WebAuthn provides native fingerprint unlock on Android Chrome. | Adding multiple public users (would require removing the single-email allowlist). |
+| **Cloud Backend & Hosting** | Cloudflare Workers + D1 + R2 + Static Assets | Supabase + Vercel, or Self-hosted VPS (Docker + Postgres) | Zero-cost free tier, global edge latency, single-origin `/api/*` + SPA eliminates CORS, and one deployment unit. Trade-off: D1 SQLite dialect, mitigated by standard SQL migrations and isolated repository queries in `backend/src/db/`. | Multi-tenant SaaS growth requiring heavy relational analytics or Postgres-specific extensions. |
+| **Client Strategy** | Single Web PWA (React 19 + Vite) | Separate Web + Native Android (Jetpack Compose) | One codebase serves desktop and Android Chrome (installable, offline IndexedDB + SW, WebAuthn fingerprint unlock), avoiding duplicate UI/testing overhead. | Need for direct Bluetooth/USB dive-computer sync from Android without Suunto App. |
+| **Charts Strategy** | Custom zero-dependency SVG charts | Chart.js / Recharts / ECharts | Zero bundle bloat, full control over DM5 dive profile scrubbing (`O(log N)` binary search, 2 `<path>` nodes, `60 fps`), and cohesive nautical visual styling. | Complex interactive BI dashboards requiring zoomable multi-axis datasets. |
+| **Offline Strategy** | Cloud D1 source of truth + IndexedDB read cache | Local-first CRDT / bidirectional offline writes | Eliminates complex multi-device conflict resolution while guaranteeing full offline consultation of dashboard, logbook, sites, and cached dive profiles on dive boats. | Requirement to create/edit dives offline and auto-merge later. |
+| **Auth & Biometrics** | Google OAuth 2.0 + email allowlist + WebAuthn | Custom email/password or Cloudflare Access | Frictionless single-user security without storing passwords; WebAuthn provides native fingerprint unlock on Android Chrome. | Opening the app to multiple public users (would require multi-tenant schema & user accounts). |
 
 ---
 
-## 5. Testing Strategy
+## 6. Testing Strategy
 
-- **Backend (`backend/tests/`):** Unit tests for the `.fit` binary parser, ascent-rate & SAC calculators, non-destructive merge logic, and Worker route handlers.
-- **Web PWA (`web/tests/`):** Unit and component tests for metric/imperial conversions, i18n completeness, offline IndexedDB cache, and interactive chart calculations.
-
----
-
-## 6. Living Changelog
-
-- **Stage 1:** Configured `pre-commit`, Gitleaks, custom staging-area security & PII gate, and GitHub Actions `security-gates.yml`.
-- **Stage 2:** Initialized monorepo layout (`backend/`, `web/`, `docs/`, `fixtures/`), gitignored `local-data/`, `notas/`, and `*.fit`, and added `deploy-cloudflare.yml`.
-- **Stage 3:** Authored professional English `README.md` and `docs/TECHNICAL_DOCUMENTATION.md`.
-- **Stage 4 (`STEP-01`):** Provisioned Cloudflare D1 (`diving-db`) and R2 (`diving-fit-archive`), authored `backend/migrations/0001_init.sql` (8 tables: `dive_sites`, `dives`, `dive_samples`, `gear_items`, `certifications`, `suunto_tokens`, `webauthn_credentials`, `user_settings`), applied schema to remote D1, and scaffolded TypeScript Worker + Vitest + ESLint (`npm audit --omit=dev`: 0 vulnerabilities).
-- **Stage 4 (`STEP-02`):** Implemented zero-dependency Web Crypto HMAC-SHA256 JWT middleware (`backend/src/middleware/auth.ts`), Google OAuth 2.0 + ID-token verification enforcing single-user `APP_USER_EMAIL` allowlist (`backend/src/routes/auth.ts`), D1 WebAuthn credential repository (`backend/src/db/authRepo.ts`), and ES256 Passkey/fingerprint registration & login verification (`7/7` tests passing, `0` prod vulnerabilities).
-- **Stage 4 (`STEP-03`):** Implemented zero-dependency binary Suunto `.fit` parser (`backend/src/fit/parser.ts`) and telemetry metrics (`backend/src/services/metrics.ts`: ascent-rate calculation across variable-interval depth samples, SAC/RMV excluding incomplete dives, Nitrox MOD/EAD/Best Mix), validated on synthetic fixtures (`13/13` tests passing) and locally against a real Suunto Nautic `.fit` export (`0` prod vulnerabilities).
-- **Stage 4 (`STEP-04`):** Completed Cloudflare D1 repository (`backend/src/db/repository.ts`), Suunto Cloud API OAuth + Webhook + manual sync with strict non-destructive merge and R2 `.fit` archival (`backend/src/services/suuntoSync.ts`), and full REST API (`backend/src/routes/api.ts`, `backend/src/index.ts`) covering dives, `.fit` upload, global stats, sites, gear, certifications, and settings (`16/16` backend tests passing, `0` prod vulnerabilities).
-- **Stage 5 (`STEP-05`):** Scaffolded the React 19 + TypeScript + Vite + Tailwind CSS v4 + `vite-plugin-pwa` client (`web/`), applying `impeccable` Operate-mode design guidelines, complete Spanish (`es`) and French (`fr`) translation parity (`web/src/i18n/`), Metric/Imperial converters (`web/src/services/units.ts`), network-first API client with IndexedDB offline replica (`web/src/offline/cacheDb.ts`, `web/src/services/api.ts`), Google Sign-In + WebAuthn fingerprint unlock (`AuthGate.tsx`), and responsive navigation shell (`AppShell.tsx`) (`5/5` web tests passing, `0` prod vulnerabilities).
-- **Stage 5 (`STEP-06`):** Implemented the interactive SVG dive profile curve (`web/src/charts/DiveProfileChart.tsx`, `profileGeometry.ts`) with click/tap point inspection popup (depth, tank pressure, ascent rate, elapsed time, water temperature) and crimson-red highlighting for segments exceeding the ascent limit (`15 m/min` default), plus searchable/filterable Logbook (`LogbookPage.tsx`, `logbookFilter.ts`) and full editable Dive Detail form (`DiveDetailPage.tsx`) (`7/7` web tests passing, `0` prod vulnerabilities).
-- **Stage 5 (`STEP-07`):** Completed `DashboardPage.tsx`, `StatsPage.tsx` (monthly dives, cumulative underwater hours, depth range distribution, seasonal water temperature, gas mix breakdown), `SitesPage.tsx` (OpenStreetMap/Leaflet interactive map with manual GPS pin placement and offline ranking fallback), `GearCertsPage.tsx` (simple gear & certifications lists), `CalculatorsPage.tsx` (offline Nitrox MOD/EAD/Best Mix & SAC/RMV calculators), and `SettingsPage.tsx` (ES/FR, Metric/Imperial, ascent threshold, WebAuthn passkey registration, manual `.fit` upload, Suunto Connect & Sync now) (`16/16` backend tests + `10/10` web tests passing, `0` prod vulnerabilities).
-- **Stage 6 (`STEP-08`):** Configured unified **Cloudflare Workers Static Assets** deployment (`[assets]` with `run_worker_first = ["/api/*"]` and `[observability]` logs + traces in `backend/wrangler.toml`), updated `deploy-cloudflare.yml` to use locked `wrangler@4.x` via `npx wrangler`, and verified full-stack bundle (`wrangler deploy --dry-run`), test suites (`26/26` total tests), SCA (`0` prod vulnerabilities), and full-history Gitleaks scan.
-- **Stage 7 (`STEP-09`):** Added D1 migration `0002_catalogs_and_paliers.sql` (`dive_centers`, `buddies`, `dive_computers`, `gear_items` `brand`/`model`, `deco_stops_json`, `buddies_json`, `gear_used_json`, center location/GPS), full CRUD endpoints for all catalogs (`/api/centers`, `/api/buddies`, `/api/computers`, `/api/gear`, `/api/certifications`), automatic catalog insertion on dive save, and stateless `POST /api/dives/parse-fit` draft parsing so `.fit` files can be previewed and edited before committing to D1/R2 (`17/17` backend tests passing, `0` prod vulnerabilities).
-- **Stage 7 (`STEP-10`):** Upgraded the Web PWA with the Suunto DM5-style multi-layer interactive `DiveProfileChart` (ocean depth gradient, dual Y-axis with green water temperature curve, persistent default layer toggles for Temp/Alerts/Speed/Pressure/Stops, and click popup with elapsed/total dive time), draft-first New Dive choice screen (`.fit` import vs manual entry without auto-saving), unsaved-changes 3-option navigation guard, multiple `Paliers` editor, `SmartSelect` & `SmartMultiSelect` auto-saved catalogs, OpenStreetMap Nominatim `LocationPicker` for sites & dive centers, official Google Sign-In icon, dive deletion confirmation, and full Catalog Manager (`Gear` with Name/Brand/Model/Notes, `Centers`, `Buddies`, `Computers`, `Certifications`) (`10/10` web tests passing, `0` prod vulnerabilities).
-- **Stage 7 (`STEP-11` & `STEP-12`):** Refined the dive profile chart so ascent-rate alerts appear strictly inside the inspected point popup (removing the permanent header banner), relaxed decimal inputs to `step="any"` for multi-decimal FIT telemetry, introduced a 2-step quick manual dive creation flow (4 essential fields -> optional post-create prompt to add full details), and reorganized `DiveDetailPage` into 3 visually framed/tinted sections (Location & Dive Center on top with horizontal site search + Lat/Lng and no center location picker, Basic Info in the middle, Complementary Info at the bottom) (`10/10` web tests passing, `0` prod vulnerabilities).
-- **Stage 8 (`STEP-13` — Android PWA Production Readiness, Adaptive Layout, Edge-to-Edge, Impeccable Polish & Performance):**
-  - **PWA & Caching Hygiene:** Added `Cache-Control: no-store, no-cache, must-revalidate, private` on all authenticated `/api/*` endpoints (`backend/src/index.ts`, verified by `security-headers.test.ts`), switched Workbox to `registerType: 'prompt'` with non-destructive `PwaUpdateBanner` (guards unsaved dive edits via `isFormDirty` so SW updates never discard user data), generated raster PNG icons (`192x192`, `512x512`, `maskable-512`), completed Android manifest (`id`, `scope`, `display_override`, `background_color: '#0b192c'`, `shortcuts`), enabled `cleanupOutdatedCaches: true`, and scoped SW `runtimeCaching` strictly to public OSM map tiles (never `/api/*`).
-  - **Adaptive & Edge-to-Edge Android UX:** Added `interactive-widget=resizes-content`, dynamic `<meta name="theme-color">`, CSS safe-area inset tokens (`top/bottom/left/right`), 3-tier adaptive navigation (mobile bottom bar hidden when IME opens, medium Navigation Rail for unfolded foldables/portrait tablets, preserved `w-60` desktop sidebar), History API sync for Android Back gesture (respecting unsaved changes), Android `.fit` file picker fix, and mobile Sign Out + optional PWA install CTA in `SettingsPage`.
-  - **Performance & Visual Polish (`impeccable detect`: `0` findings):** Code-split 7 secondary/heavy pages via `React.lazy` (cutting initial JS from `511.26 kB` to `296.16 kB`, isolating `leaflet` `154.5 kB` on demand), merged `DiveProfileChart` curve into 2 `<path>` nodes with `React.memo`, `O(log N)` binary search, pointer scrubbing, and `ResizeObserver` responsive sizing; replaced `<datalist>` with touch-friendly `SmartSelect`/`SmartMultiSelect`; self-hosted `IBM Plex Sans` + `IBM Plex Mono` (`latin`/`latin-ext`); fixed `DiveDetailPage` keystroke re-render loop and added sticky Save bar + sub-blocks; added real `<label>`s, edit cancel, inline delete confirmation, and 1-catalog selective reloads in `GearCertsPage`; cached `Intl.DateTimeFormat` + `useDeferredValue` + collapsible mobile filters in `LogbookPage` (`19/19` backend + `10/10` web tests passing, `0` prod vulnerabilities).
+- **Backend (`backend/tests/` — 19 tests across 6 suites):** Schema validation, `.fit` binary parser, ascent-rate & SAC/Nitrox calculators, JWT/Google OAuth/WebAuthn auth, security & `Cache-Control` headers, and API + non-destructive Suunto sync.
+- **Web PWA (`web/tests/` — 11 tests across 5 suites):** Metric/Imperial conversions, ES/FR translation key parity, calculators & cumulative hours series, `O(log N)` profile geometry + multi-criteria logbook filtering, and IndexedDB offline cache.
 
 ---
 
-## 7. Project Definition of Done Verification
+## 7. Living Changelog
+
+- **Stage 1–3:** Pre-commit + Gitleaks + custom staging-area security & PII gate, monorepo scaffolding, CI workflows, and living documentation.
+- **Stage 4 (`STEP-01`–`STEP-04`):** Cloudflare D1 (`0001_init.sql`), R2 archival, Web Crypto JWT + Google OAuth + WebAuthn Passkeys, zero-dependency Suunto `.fit` binary parser, ascent-rate & SAC metrics, Suunto Cloud API sync, and full REST API.
+- **Stage 5–6 (`STEP-05`–`STEP-08`):** React 19 + Tailwind v4 + Vite Web PWA, ES/FR localization, Metric/Imperial converters, IndexedDB offline cache, interactive dive profile chart, Leaflet sites map, Nitrox/SAC calculators, and unified Cloudflare Workers Static Assets deployment.
+- **Stage 7 (`STEP-09`–`STEP-12`):** Migration `0002_catalogs_and_paliers.sql`, full CRUD catalogs, stateless draft `.fit` parsing, DM5-style multi-layer `DiveProfileChart`, 2-step quick manual dive creation, unsaved-changes guard, and 3-section `DiveDetailPage`.
+- **Stage 8 (`STEP-13`):** Android PWA production readiness — `Cache-Control: no-store, private` on `/api/*`, `registerType: 'prompt'` + `PwaUpdateBanner`, raster/maskable icons, edge-to-edge safe areas, 3-tier adaptive navigation, History API back-gesture sync, `React.lazy` code splitting (`-42%` initial JS), `O(log N)` pointer scrubbing on `DiveProfileChart`, and self-hosted IBM Plex fonts.
+- **Stage 9 (`STEP-14`):** FFESSM logbook migrations (`0003_ffessm_fields.sql`, `0004_dive_types.sql`), FFESSM-inspired airy logbook cards with multi-criteria filter drawer (`≤ 20 m`, `20–40 m`, `> 40 m`, modality, entry, exploration, year, gas), merged **Dashboard** with custom SVG charts (removing separate `StatsPage`), view-only fixed **Sites** map with DOM markers, smooth zoom, clickable popups & airy expandable site cards, read-only-first **Dive Detail** with top Edit toggle, auto-numbered dives, unified site search/manual/lock workflow, soft-blue section styling, disabled Suunto sync when disconnected, and rebranding to **Journal de plongée / Diario de buceo**.
+
+---
+
+## 8. GenAI Engineering Governance
+
+This application was built end-to-end with **Generative AI (agentic engineering)** paired with deterministic quality and security controls:
+- **Human-in-the-Loop Release Control:** All product decisions, architecture approvals, database reconciliations, and Git commits/pushes are explicitly reviewed and executed by the repository owner.
+- **Deterministic Verification Loop:** Every change is validated automatically through TypeScript strict checking, ESLint, Ruff, `30` unit/integration tests (`19` backend + `11` web), PWA build verification, SCA (`npm audit`), Gitleaks, and custom staging-area PII/secret inspection.
+- **Living Documentation Discipline:** Architecture diagrams, trade-offs, binary protocol specs, and the stage-by-stage changelog are continuously synchronized with the actual codebase.
+
+---
+
+## 9. Definition of Done Verification
 
 | Category | Status | Evidence |
 | :--- | :---: | :--- |
-| **Functionality** | Passed | Suunto `.fit` parser + Cloud API OAuth/Webhook/Sync (non-destructive merge), R2 archival, Google Sign-In + WebAuthn Passkey unlock, interactive dive profile (`>15 m/min` red segments + popup), Logbook filters, Dashboard, Evolution charts, OSM/Leaflet Sites map + offline ranking, Gear/Certs, Nitrox/SAC calculators, ES/FR, Metric/Imperial, IndexedDB + SW offline cache. |
-| **Quality & Testing** | Passed | `16/16` Backend tests + `10/10` Web tests passing; `eslint` and `tsc --noEmit` passing with `0` errors across both packages; `wrangler deploy --dry-run` verified (`10` PWA assets + Worker bundle). |
-| **Security & SCA** | Passed | `pre-commit` staging-area inspection (`check_staged_security.py` + Gitleaks), full Git history Gitleaks scan (`0` leaks), `npm audit --omit=dev --audit-level=high` (`0` vulnerabilities in both `backend/` and `web/`). |
-| **Documentation & Ops** | Passed | `README.md` and `docs/TECHNICAL_DOCUMENTATION.md` aligned with actual implementation; `.env.example` documents all variables without exposing secrets; `notas/` and `local-data/` remain gitignored. |
+| **Functionality** | Passed | Suunto `.fit` parser + Cloud API OAuth/Webhook/Sync, R2 archival, Google Sign-In + WebAuthn Passkeys, unified Dashboard with custom SVG charts, FFESSM Logbook cards + multi-filter drawer, read-first Dive Detail with DM5 profile chart & unified Site selector, view-only Sites map + expandable dive lists, Equipment/Certs catalogs, Nitrox/SAC calculators, ES/FR, Metric/Imperial, IndexedDB + SW offline cache. |
+| **Quality & Testing** | Passed | `19/19` Backend tests + `11/11` Web tests passing; `eslint` and `tsc --noEmit` passing with `0` errors across both packages; PWA production build verified (`dist/sw.js` + `manifest.webmanifest`). |
+| **Security & SCA** | Passed | `pre-commit run --all-files` (`13/13` hooks passed), `check_staged_security.py --all-tracked` (`98` files passed), Gitleaks scan (`0` leaks), `npm audit --omit=dev --audit-level=high` (`0` vulnerabilities in both `backend/` and `web/`). |
+| **Public-Repo Hygiene** | Passed | Zero local `file:///` paths, zero personal domains/emails/account IDs in tracked docs, `.env.example` sanitized, `local-data/` and `notas/` strictly gitignored. |
