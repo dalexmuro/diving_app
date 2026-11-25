@@ -132,22 +132,30 @@ export function buildProfileGeometry(
 }
 
 /**
- * Finds the plotted profile point closest to a normalized horizontal click/tap position (0..1).
+ * Finds the plotted profile point closest to a normalized horizontal click/tap position (0..1)
+ * using O(log N) binary search for smooth 60fps touch scrubbing on Android.
  */
 export function findNearestProfilePoint(
   points: PlottedProfilePoint[],
   targetXRatio: number,
 ): PlottedProfilePoint | null {
   if (points.length === 0) return null;
+  if (points.length === 1) return points[0];
   const clamped = Math.max(0, Math.min(1, targetXRatio));
-  let best = points[0];
-  let bestDist = Math.abs(points[0].xRatio - clamped);
-  for (let i = 1; i < points.length; i++) {
-    const dist = Math.abs(points[i].xRatio - clamped);
-    if (dist < bestDist) {
-      best = points[i];
-      bestDist = dist;
+
+  let lo = 0;
+  let hi = points.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (points[mid].xRatio < clamped) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
     }
   }
-  return best;
+
+  if (lo === 0) return points[0];
+  const prev = points[lo - 1];
+  const curr = points[lo];
+  return Math.abs(prev.xRatio - clamped) <= Math.abs(curr.xRatio - clamped) ? prev : curr;
 }

@@ -24,8 +24,11 @@ export function NewDiveChoicePage({
   const [error, setError] = useState<string | null>(null);
   const [createdDiveId, setCreatedDiveId] = useState<string | null>(null);
 
-  // Quick manual form state (4 essential fields)
-  const [diveDate, setDiveDate] = useState(() => new Date().toISOString().slice(0, 10));
+  // Quick manual form state (4 essential fields, using local date consistently)
+  const [diveDate, setDiveDate] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  });
   const [endTime, setEndTime] = useState(() => {
     const now = new Date();
     return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -36,13 +39,18 @@ export function NewDiveChoicePage({
   async function handleFileSelect(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.fit')) {
+      setError(t('invalidFitFile'));
+      e.target.value = '';
+      return;
+    }
     setError(null);
     setParsing(true);
     try {
       const draft = await apiClient.parseFitDraft(file);
       onFitParsed(draft);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to parse .fit file');
+      setError(err instanceof Error ? err.message : t('invalidFitFile'));
     } finally {
       setParsing(false);
       e.target.value = '';
@@ -166,6 +174,7 @@ export function NewDiveChoicePage({
                 <span>{t('durationMin')}</span>
                 <input
                   type="number"
+                  inputMode="decimal"
                   min="1"
                   step="any"
                   required
@@ -180,6 +189,7 @@ export function NewDiveChoicePage({
                 <span>{t('maxDepth')} (m)</span>
                 <input
                   type="number"
+                  inputMode="decimal"
                   min="0"
                   step="any"
                   required
@@ -232,7 +242,7 @@ export function NewDiveChoicePage({
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <label className="panel-surface p-6 space-y-3 hover:border-sky-400 transition-colors cursor-pointer block">
+        <label className="panel-surface p-6 space-y-3 hover:border-sky-400 focus-within:ring-2 focus-within:ring-sky-500 active:bg-slate-50 transition-colors cursor-pointer block">
           <div className="w-10 h-10 rounded-lg bg-sky-50 border border-sky-200 flex items-center justify-center text-sky-700">
             <FileUp className="w-5 h-5" />
           </div>
@@ -242,10 +252,10 @@ export function NewDiveChoicePage({
           <p className="text-sm text-slate-600 leading-relaxed">{t('importFitDesc')}</p>
           <input
             type="file"
-            accept=".fit"
+            accept=".fit,.FIT,application/octet-stream,*/*"
             disabled={parsing}
             onChange={(e) => void handleFileSelect(e)}
-            className="hidden"
+            className="sr-only"
           />
         </label>
 

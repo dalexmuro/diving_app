@@ -1,5 +1,5 @@
 import { MapPin, Search } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePreferences } from '../i18n/I18nContext';
 import { type GeocodingResult, apiClient } from '../services/api';
 
@@ -28,15 +28,27 @@ export function LocationPicker({
   const [searchQuery, setSearchQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<GeocodingResult[]>([]);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   async function handleSearch() {
     if (isOffline || !searchQuery.trim()) return;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setSearching(true);
     try {
-      const found = await apiClient.searchLocation(searchQuery);
-      setResults(found);
+      const found = await apiClient.searchLocation(searchQuery, controller.signal);
+      if (!controller.signal.aborted) {
+        setResults(found);
+      }
+    } catch {
+      // Ignore aborted requests
     } finally {
-      setSearching(false);
+      if (!controller.signal.aborted) {
+        setSearching(false);
+      }
     }
   }
 

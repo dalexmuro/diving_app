@@ -1,18 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from './components/AppShell';
 import { AuthGate } from './components/AuthGate';
+import { PwaUpdateBanner } from './components/PwaUpdateBanner';
 import { PreferencesContext } from './i18n/I18nContext';
 import { TRANSLATIONS, type TranslationKey } from './i18n/translations';
 import { offlineCache } from './offline/cacheDb';
-import { CalculatorsPage } from './pages/CalculatorsPage';
 import { DashboardPage } from './pages/DashboardPage';
-import { DiveDetailPage } from './pages/DiveDetailPage';
-import { GearCertsPage } from './pages/GearCertsPage';
 import { LogbookPage } from './pages/LogbookPage';
-import { NewDiveChoicePage } from './pages/NewDiveChoicePage';
-import { SettingsPage } from './pages/SettingsPage';
-import { SitesPage } from './pages/SitesPage';
-import { StatsPage } from './pages/StatsPage';
 import { apiClient } from './services/api';
 import {
   type AppView,
@@ -23,7 +17,76 @@ import {
   type UnitSystem,
 } from './types/domain';
 
+// Code-split secondary & heavy pages (e.g., Leaflet in SitesPage) to keep initial Android PWA bundle fast
+const DiveDetailPage = lazy(() =>
+  import('./pages/DiveDetailPage').then((m) => ({ default: m.DiveDetailPage })),
+);
+const NewDiveChoicePage = lazy(() =>
+  import('./pages/NewDiveChoicePage').then((m) => ({ default: m.NewDiveChoicePage })),
+);
+const StatsPage = lazy(() => import('./pages/StatsPage').then((m) => ({ default: m.StatsPage })));
+const SitesPage = lazy(() => import('./pages/SitesPage').then((m) => ({ default: m.SitesPage })));
+const GearCertsPage = lazy(() =>
+  import('./pages/GearCertsPage').then((m) => ({ default: m.GearCertsPage })),
+);
+const CalculatorsPage = lazy(() =>
+  import('./pages/CalculatorsPage').then((m) => ({ default: m.CalculatorsPage })),
+);
+const SettingsPage = lazy(() =>
+  import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })),
+);
+
+const VIEW_STORAGE_KEY = 'diving_nav_state_v1';
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
+
+const VALID_VIEWS: readonly AppView[] = [
+  'dashboard',
+  'logbook',
+  'new-dive-choice',
+  'dive-detail',
+  'statistics',
+  'sites',
+  'gear-certs',
+  'calculators',
+  'settings',
+];
+
+function getInitialNavState(): { view: AppView; diveId: string | null } {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const paramView = params.get('view') as AppView | null;
+    if (paramView && VALID_VIEWS.includes(paramView)) {
+      return { view: paramView, diveId: params.get('dive') };
+    }
+    const raw = sessionStorage.getItem(VIEW_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as { view?: AppView; diveId?: string | null };
+      if (parsed.view && VALID_VIEWS.includes(parsed.view) && parsed.view !== 'new-dive-choice') {
+        return { view: parsed.view, diveId: parsed.diveId ?? null };
+      }
+    }
+  } catch {
+    // Ignore storage errors
+  }
+  return { view: 'dashboard', diveId: null };
+}
+
+function PageFallback() {
+  return (
+    <div className="space-y-4 py-2" aria-busy="true">
+      <div className="h-7 w-44 rounded-lg bg-slate-200/80 animate-pulse" />
+      <div className="h-48 rounded-xl bg-slate-200/70 animate-pulse" />
+    </div>
+  );
+}
+
 export function App() {
+  const initialNav = useMemo(() => getInitialNavState(), []);
+
   const [authChecked, setAuthChecked] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [offlineBrowse, setOfflineBrowse] = useState(false);
@@ -34,17 +97,35 @@ export function App() {
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('metric');
   const [ascentLimitMMin, setAscentLimitMMin] = useState(15);
 
-  const [activeView, setActiveView] = useState<AppView>('dashboard');
-  const [selectedDiveId, setSelectedDiveId] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<AppView>(initialNav.view);
+  const [selectedDiveId, setSelectedDiveId] = useState<string | null>(initialNav.diveId);
   const [draftFit, setDraftFit] = useState<DraftFitInit | null>(null);
-  const [isOffline, setIsOffline] = useState(false);
+  const [isOffline, setIsOffline] = useState(
+    typeof navigator !== 'undefined' ? !navigator.onLine : false,
+  );
   const [stats, setStats] = useState<GlobalStats | null>(null);
   const [dives, setDives] = useState<DiveSummary[]>([]);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
 
-  // Unsaved-changes guard (#7)
+  // Unsaved-changes guard
   const [isFormDirty, setIsFormDirty] = useState(false);
   const saveHandlerRef = useRef<(() => Promise<boolean>) | null>(null);
   const [pendingView, setPendingView] = useState<AppView | null>(null);
+
+  const activeViewRef = useRef(activeView);
+  const isFormDirtyRef = useRef(isFormDirty);
+  activeViewRef.current = activeView;
+  isFormDirtyRef.current = isFormDirty;
+
+  const refreshDivesAndStats = useCallback(async () => {
+    const [divesRes, statsRes] = await Promise.all([
+      apiClient.fetchDives(),
+      apiClient.fetchStats(),
+    ]);
+    setDives(divesRes.data);
+    setStats(statsRes.data);
+    setIsOffline(divesRes.offline || statsRes.offline);
+  }, []);
 
   const loadInitialData = useCallback(async () => {
     const [settings, divesRes, statsRes] = await Promise.all([
@@ -59,6 +140,118 @@ export function App() {
     setStats(statsRes.data);
     setIsOffline(divesRes.offline || statsRes.offline);
   }, []);
+
+  // Capture Android Chrome beforeinstallprompt for optional install CTA in Settings
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as BeforeInstallPromptEvent);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  // Sync <meta name="theme-color"> with current surface for cohesive Android status bar
+  useEffect(() => {
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) return;
+    const isDarkSurface = !authChecked || (!authenticated && !offlineBrowse);
+    meta.setAttribute('content', isDarkSurface ? '#0b192c' : '#ffffff');
+  }, [authChecked, authenticated, offlineBrowse]);
+
+  // Keep <html lang> in sync with selected language
+  useEffect(() => {
+    document.documentElement.lang = language;
+  }, [language]);
+
+  // Persist navigation state across Android rotation / foldable transitions / tab reclaim
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        VIEW_STORAGE_KEY,
+        JSON.stringify({ view: activeView, diveId: selectedDiveId }),
+      );
+    } catch {
+      // Ignore storage errors
+    }
+  }, [activeView, selectedDiveId]);
+
+  // Live online/offline detection & automatic refresh on reconnect
+  useEffect(() => {
+    const handleOffline = () => setIsOffline(true);
+    const handleOnline = () => {
+      setIsOffline(false);
+      if (authenticated || offlineBrowse) {
+        void refreshDivesAndStats();
+      }
+    };
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [authenticated, offlineBrowse, refreshDivesAndStats]);
+
+  // Sync browser History API so Android Back button navigates inside the PWA cleanly
+  const pushHistoryView = useCallback((view: AppView, diveId: string | null = null) => {
+    try {
+      window.history.pushState({ view, diveId }, '');
+    } catch {
+      // Ignore history API errors in restricted contexts
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.history.replaceState({ view: activeViewRef.current, diveId: selectedDiveId }, '');
+    } catch {
+      // Ignore
+    }
+    const onPopState = (ev: PopStateEvent) => {
+      const state = ev.state as { view?: AppView; diveId?: string | null } | null;
+      const targetView: AppView =
+        state?.view && VALID_VIEWS.includes(state.view) ? state.view : 'dashboard';
+
+      if (
+        activeViewRef.current === 'dive-detail' &&
+        isFormDirtyRef.current &&
+        targetView !== 'dive-detail'
+      ) {
+        // Re-push current state and show unsaved-changes guard instead of discarding edits
+        try {
+          window.history.pushState({ view: 'dive-detail', diveId: selectedDiveId }, '');
+        } catch {
+          // Ignore
+        }
+        setPendingView(targetView);
+        return;
+      }
+
+      if (targetView !== 'dive-detail') {
+        setDraftFit(null);
+      }
+      setSelectedDiveId(state?.diveId ?? null);
+      setActiveView(targetView);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [selectedDiveId]);
+
+  // Lock body scroll & support Escape dismiss on Unsaved Changes modal
+  useEffect(() => {
+    if (!pendingView) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPendingView(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [pendingView]);
 
   useEffect(() => {
     void (async () => {
@@ -117,16 +310,23 @@ export function App() {
       if (nextView !== 'dive-detail') {
         setDraftFit(null);
       }
+      if (nextView !== activeView) {
+        pushHistoryView(nextView, null);
+      }
       setActiveView(nextView);
     },
-    [activeView, isFormDirty],
+    [activeView, isFormDirty, pushHistoryView],
   );
 
-  const openDiveDetail = useCallback((diveId: string) => {
-    setDraftFit(null);
-    setSelectedDiveId(diveId);
-    setActiveView('dive-detail');
-  }, []);
+  const openDiveDetail = useCallback(
+    (diveId: string) => {
+      setDraftFit(null);
+      setSelectedDiveId(diveId);
+      pushHistoryView('dive-detail', diveId);
+      setActiveView('dive-detail');
+    },
+    [pushHistoryView],
+  );
 
   const handleDirtyChange = useCallback(
     (dirty: boolean, saveFn: (() => Promise<boolean>) | null) => {
@@ -135,6 +335,26 @@ export function App() {
     },
     [],
   );
+
+  const handleSignOut = useCallback(() => {
+    void apiClient.logout().finally(() => {
+      setAuthenticated(false);
+      setOfflineBrowse(false);
+    });
+  }, []);
+
+  const handleStartNewDive = useCallback(() => {
+    requestNavigate('new-dive-choice');
+  }, [requestNavigate]);
+
+  const handleInstallPwa = useCallback(async () => {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    if (choice.outcome === 'accepted') {
+      setInstallPrompt(null);
+    }
+  }, [installPrompt]);
 
   if (!authChecked) {
     return (
@@ -161,6 +381,7 @@ export function App() {
             void loadInitialData();
           }}
         />
+        <PwaUpdateBanner isFormDirty={false} />
       </PreferencesContext.Provider>
     );
   }
@@ -172,89 +393,99 @@ export function App() {
         isOffline={isOffline}
         userEmail={userEmail}
         onNavigate={requestNavigate}
-        onSignOut={() => {
-          void apiClient.logout().finally(() => {
-            setAuthenticated(false);
-            setOfflineBrowse(false);
-          });
-        }}
+        onSignOut={handleSignOut}
       >
-        {activeView === 'dashboard' && (
-          <DashboardPage
-            stats={stats}
-            dives={dives}
-            isOffline={isOffline}
-            onSelectDive={openDiveDetail}
-            onStartNewDive={() => requestNavigate('new-dive-choice')}
-          />
-        )}
-        {activeView === 'logbook' && (
-          <LogbookPage
-            dives={dives}
-            isOffline={isOffline}
-            onSelectDive={openDiveDetail}
-            onStartNewDive={() => requestNavigate('new-dive-choice')}
-          />
-        )}
-        {activeView === 'new-dive-choice' && (
-          <NewDiveChoicePage
-            onBack={() => setActiveView('logbook')}
-            onFitParsed={(parsedDraft) => {
-              setDraftFit(parsedDraft);
-              setSelectedDiveId(null);
-              setActiveView('dive-detail');
-            }}
-            onManualDiveCreated={async (createdId, openDetails) => {
-              await loadInitialData();
-              if (openDetails) {
-                openDiveDetail(createdId);
-              } else {
-                setActiveView('logbook');
-              }
-            }}
-          />
-        )}
-        {activeView === 'dive-detail' && (
-          <DiveDetailPage
-            diveId={selectedDiveId}
-            draftFit={draftFit}
-            isOffline={isOffline}
-            onDirtyChange={handleDirtyChange}
-            onRequestBack={() => requestNavigate('logbook')}
-            onSaved={async (savedId) => {
-              setSelectedDiveId(savedId);
-              setDraftFit(null);
-              await loadInitialData();
-            }}
-            onDeleted={async () => {
-              setSelectedDiveId(null);
-              setDraftFit(null);
-              await loadInitialData();
-              setActiveView('logbook');
-            }}
-          />
-        )}
-        {activeView === 'statistics' && <StatsPage stats={stats} />}
-        {activeView === 'sites' && <SitesPage isOffline={isOffline} />}
-        {activeView === 'gear-certs' && <GearCertsPage isOffline={isOffline} />}
-        {activeView === 'calculators' && <CalculatorsPage />}
-        {activeView === 'settings' && (
-          <SettingsPage isOffline={isOffline} onDataChanged={loadInitialData} />
-        )}
+        <Suspense fallback={<PageFallback />}>
+          {activeView === 'dashboard' && (
+            <DashboardPage
+              stats={stats}
+              dives={dives}
+              isOffline={isOffline}
+              onSelectDive={openDiveDetail}
+              onStartNewDive={handleStartNewDive}
+            />
+          )}
+          {activeView === 'logbook' && (
+            <LogbookPage
+              dives={dives}
+              isOffline={isOffline}
+              onSelectDive={openDiveDetail}
+              onStartNewDive={handleStartNewDive}
+            />
+          )}
+          {activeView === 'new-dive-choice' && (
+            <NewDiveChoicePage
+              onBack={() => requestNavigate('logbook')}
+              onFitParsed={(parsedDraft) => {
+                setDraftFit(parsedDraft);
+                setSelectedDiveId(null);
+                pushHistoryView('dive-detail', null);
+                setActiveView('dive-detail');
+              }}
+              onManualDiveCreated={async (createdId, openDetails) => {
+                await refreshDivesAndStats();
+                if (openDetails) {
+                  openDiveDetail(createdId);
+                } else {
+                  requestNavigate('logbook');
+                }
+              }}
+            />
+          )}
+          {activeView === 'dive-detail' && (
+            <DiveDetailPage
+              diveId={selectedDiveId}
+              draftFit={draftFit}
+              isOffline={isOffline}
+              onDirtyChange={handleDirtyChange}
+              onRequestBack={() => requestNavigate('logbook')}
+              onSaved={async (savedId) => {
+                setSelectedDiveId(savedId);
+                setDraftFit(null);
+                await refreshDivesAndStats();
+              }}
+              onDeleted={async () => {
+                setSelectedDiveId(null);
+                setDraftFit(null);
+                await refreshDivesAndStats();
+                requestNavigate('logbook');
+              }}
+            />
+          )}
+          {activeView === 'statistics' && <StatsPage stats={stats} />}
+          {activeView === 'sites' && <SitesPage isOffline={isOffline} />}
+          {activeView === 'gear-certs' && <GearCertsPage isOffline={isOffline} />}
+          {activeView === 'calculators' && <CalculatorsPage />}
+          {activeView === 'settings' && (
+            <SettingsPage
+              isOffline={isOffline}
+              userEmail={userEmail}
+              canInstallPwa={Boolean(installPrompt)}
+              onInstallPwa={handleInstallPwa}
+              onSignOut={handleSignOut}
+              onDataChanged={refreshDivesAndStats}
+            />
+          )}
+        </Suspense>
 
-        {/* Unsaved Changes Confirmation Modal (#7) */}
+        {/* Unsaved Changes Confirmation — Bottom Sheet on mobile, centered Dialog on sm+ */}
         {pendingView && (
-          <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl border border-slate-200 max-w-md w-full p-5 space-y-4 shadow-xl">
-              <h2 className="text-base font-semibold text-slate-900">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="unsaved-modal-title"
+            className="fixed inset-0 z-50 bg-slate-900/60 flex items-end sm:items-center justify-center sm:p-4"
+          >
+            <div className="bg-white rounded-t-2xl sm:rounded-xl border border-slate-200 max-w-md w-full p-5 pb-[max(1.25rem,var(--safe-bottom))] sm:pb-5 max-h-[85dvh] overflow-y-auto space-y-4 shadow-xl">
+              <h2 id="unsaved-modal-title" className="text-base font-semibold text-slate-900">
                 {prefsValue.t('unsavedTitle')}
               </h2>
               <p className="text-sm text-slate-600">{prefsValue.t('unsavedMessage')}</p>
-              <div className="flex flex-col sm:flex-row justify-end gap-2 pt-1">
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-1">
                 <button
                   type="button"
                   onClick={() => setPendingView(null)}
-                  className="rounded-lg border border-slate-300 px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+                  className="rounded-lg border border-slate-300 px-3.5 py-2.5 sm:py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 active:bg-slate-100 cursor-pointer"
                 >
                   {prefsValue.t('continueEditing')}
                 </button>
@@ -265,9 +496,10 @@ export function App() {
                     setPendingView(null);
                     setIsFormDirty(false);
                     setDraftFit(null);
+                    pushHistoryView(target, null);
                     setActiveView(target);
                   }}
-                  className="rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 px-3.5 py-2 text-xs font-medium text-red-700 cursor-pointer"
+                  className="rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 active:bg-red-200/70 px-3.5 py-2.5 sm:py-2 text-xs font-medium text-red-700 cursor-pointer"
                 >
                   {prefsValue.t('leaveWithoutSaving')}
                 </button>
@@ -280,11 +512,12 @@ export function App() {
                       if (ok) {
                         setPendingView(null);
                         setIsFormDirty(false);
+                        pushHistoryView(target, null);
                         setActiveView(target);
                       }
                     })();
                   }}
-                  className="rounded-lg bg-sky-600 hover:bg-sky-700 px-3.5 py-2 text-xs font-medium text-white cursor-pointer"
+                  className="rounded-lg bg-sky-600 hover:bg-sky-700 active:bg-sky-800 px-3.5 py-2.5 sm:py-2 text-xs font-medium text-white cursor-pointer"
                 >
                   {prefsValue.t('saveAndLeave')}
                 </button>
@@ -293,6 +526,13 @@ export function App() {
           </div>
         )}
       </AppShell>
+
+      <PwaUpdateBanner
+        isFormDirty={isFormDirty}
+        onSaveBeforeUpdate={() =>
+          saveHandlerRef.current ? saveHandlerRef.current() : Promise.resolve(true)
+        }
+      />
     </PreferencesContext.Provider>
   );
 }

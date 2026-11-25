@@ -53,10 +53,10 @@ export interface GeocodingResult {
 }
 
 export const apiClient = {
-  async searchLocation(query: string): Promise<GeocodingResult[]> {
+  async searchLocation(query: string, signal?: AbortSignal): Promise<GeocodingResult[]> {
     if (!query.trim()) return [];
     const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(query.trim())}`;
-    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    const res = await fetch(url, { headers: { Accept: 'application/json' }, signal });
     if (!res.ok) return [];
     const rows = (await res.json()) as Array<{ display_name: string; lat: string; lon: string }>;
     return rows.map((r) => ({

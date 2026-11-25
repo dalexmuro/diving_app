@@ -1,5 +1,16 @@
-import { ArrowLeft, Check, Compass, MapPin, Plus, Save, SlidersHorizontal, Trash2 } from 'lucide-react';
-import { type FormEvent, useEffect, useState } from 'react';
+import {
+  AlertCircle,
+  ArrowLeft,
+  Check,
+  Compass,
+  MapPin,
+  Plus,
+  Save,
+  SlidersHorizontal,
+  Trash2,
+  WifiOff,
+} from 'lucide-react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { DiveProfileChart } from '../charts/DiveProfileChart';
 import { LocationPicker } from '../components/LocationPicker';
 import { SmartMultiSelect } from '../components/SmartMultiSelect';
@@ -78,9 +89,12 @@ export function DiveDetailPage({
   const [samples, setSamples] = useState<TelemetrySample[]>([]);
   const [loading, setLoading] = useState(!isNewDraft);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [savedToast, setSavedToast] = useState(false);
   const [dirty, setDirty] = useState(isNewDraft);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const toastTimerRef = useRef<number | null>(null);
+  const persistRef = useRef<() => Promise<boolean>>(async () => false);
 
   // Catalogs for SmartSelect / SmartMultiSelect
   const [centers, setCenters] = useState<DiveCenter[]>([]);
@@ -254,6 +268,7 @@ export function DiveDetailPage({
   async function persistDive(): Promise<boolean> {
     if (isOffline) return false;
     setSaving(true);
+    setSaveError(null);
     setSavedToast(false);
     try {
       const startedIso = combineDateTimeToIso(diveDate, startTime);
@@ -322,18 +337,58 @@ export function DiveDetailPage({
       setDirty(false);
       await onSaved(savedDive.id);
       setSavedToast(true);
-      setTimeout(() => setSavedToast(false), 2500);
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = window.setTimeout(() => setSavedToast(false), 2500);
       return true;
+    } catch {
+      setSaveError(t('saveErrorGeneric'));
+      return false;
     } finally {
       setSaving(false);
     }
   }
 
-  // Expose dirty status & save handler to App-level navigation guard
+  persistRef.current = persistDive;
+
+  // Clean up toast timer on unmount
+  useEffect(
+    () => () => {
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    },
+    [],
+  );
+
+  // Expose dirty status & stable save handler ONLY when dirty actually toggles (prevents 2x App re-renders per keystroke)
   useEffect(() => {
-    onDirtyChange(dirty, dirty ? persistDive : null);
+    onDirtyChange(dirty, dirty ? () => persistRef.current() : null);
     return () => onDirtyChange(false, null);
-  });
+  }, [dirty, onDirtyChange]);
+
+  // Ctrl/Cmd+S keyboard shortcut to save quickly
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        if (!saving && !isOffline) {
+          void persistRef.current();
+        }
+      } else if (e.key === 'Escape' && confirmDeleteOpen) {
+        setConfirmDeleteOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [saving, isOffline, confirmDeleteOpen]);
+
+  // Lock body scroll when delete modal is open
+  useEffect(() => {
+    if (!confirmDeleteOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [confirmDeleteOpen]);
 
   function handleCenterSelect(val: string) {
     setDiveCenter(val);
@@ -368,6 +423,26 @@ export function DiveDetailPage({
         <div className="h-8 w-48 rounded-lg bg-slate-200 animate-pulse" />
         <div className="h-64 rounded-xl bg-slate-200 animate-pulse" />
       </div>
+    );
+  }
+
+  // Explicit offline empty state when a dive detail was never cached locally
+  if (!isNewDraft && !dive) {
+    return (
+      <section className="space-y-5">
+        <button
+          type="button"
+          onClick={onRequestBack}
+          className="inline-flex items-center gap-2 text-sm font-medium text-slate-700 hover:text-slate-900 cursor-pointer"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          {t('backToLogbook')}
+        </button>
+        <div className="panel-surface p-8 text-center space-y-3 max-w-md mx-auto">
+          <WifiOff className="w-8 h-8 text-amber-600 mx-auto" />
+          <p className="text-sm text-slate-700">{t('offlineDiveNotCached')}</p>
+        </div>
+      </section>
     );
   }
 
@@ -705,11 +780,12 @@ export function DiveDetailPage({
               </div>
             )}
 
-            <div className="grid grid-cols-3 sm:max-w-md gap-2 items-end">
+            <div className="grid grid-cols-2 sm:grid-cols-3 sm:max-w-md gap-2 items-end">
               <label className="space-y-1 text-xs font-medium text-slate-700">
                 <span>{t('stopDepthM')}</span>
                 <input
                   type="number"
+                  inputMode="decimal"
                   min="1"
                   step="any"
                   value={newStopDepth}
@@ -721,6 +797,7 @@ export function DiveDetailPage({
                 <span>{t('stopDurationMin')}</span>
                 <input
                   type="number"
+                  inputMode="numeric"
                   min="1"
                   step="1"
                   value={newStopMin}
@@ -731,7 +808,7 @@ export function DiveDetailPage({
               <button
                 type="button"
                 onClick={addDecoStop}
-                className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-medium px-3 py-2 cursor-pointer"
+                className="col-span-2 sm:col-span-1 inline-flex items-center justify-center gap-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-800 text-xs font-medium px-3 py-2 cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5 text-violet-600" />
                 <span>{t('addDecoStop')}</span>
@@ -739,8 +816,12 @@ export function DiveDetailPage({
             </div>
           </div>
 
-          {/* Pressures, Tank, Ballast, Water, Gas, Ratings */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+          {/* Sub-block: Tank, Pressures & Gas */}
+          <div className="space-y-3 pt-1">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              {t('subSectionTankGas')}
+            </h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
             <label className="space-y-1 text-xs font-medium text-slate-700">
               <span>{t('startPressure')} (bar)</span>
               <input
@@ -870,7 +951,15 @@ export function DiveDetailPage({
                 />
               </label>
             </div>
+            </div>
+          </div>
 
+          {/* Sub-block: Conditions & Notes */}
+          <div className="space-y-3 pt-2 border-t border-slate-200/80">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              {t('subSectionConditions')}
+            </h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <label className="space-y-1 text-xs font-medium text-slate-700">
               <span>{t('visibility')}</span>
               <select
@@ -951,47 +1040,76 @@ export function DiveDetailPage({
               className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm text-slate-900"
             />
           </label>
+          </div>
         </div>
 
-        {/* Sticky/Bottom Action Bar */}
-        <div className="flex items-center justify-between pt-1">
-          <div>
-            {savedToast && (
+        {saveError && (
+          <div
+            role="alert"
+            className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs font-medium text-red-800"
+          >
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{saveError}</span>
+          </div>
+        )}
+
+        {/* True Sticky Save Action Bar when editing */}
+        <div
+          className={`flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3 transition-shadow ${
+            dirty
+              ? 'sticky bottom-[calc(4.25rem+var(--safe-bottom))] sm:bottom-3 z-20 bg-white/95 backdrop-blur border border-sky-200 shadow-lg'
+              : 'pt-1'
+          }`}
+        >
+          <div aria-live="polite" className="min-h-5 flex items-center">
+            {savedToast ? (
               <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700">
                 <Check className="w-4 h-4" />
                 {t('savedSuccess')}
               </span>
-            )}
+            ) : dirty ? (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700">
+                <span className="w-2 h-2 rounded-full bg-amber-500" />
+                {t('unsavedChangesBadge')}
+              </span>
+            ) : null}
           </div>
           <button
             type="submit"
             disabled={saving || isOffline}
-            className="inline-flex items-center gap-2 rounded-lg bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-sm font-medium px-5 py-2.5 transition-colors cursor-pointer"
+            className="inline-flex items-center gap-2 rounded-lg bg-sky-600 hover:bg-sky-700 active:bg-sky-800 disabled:opacity-50 text-white text-sm font-medium px-5 py-2.5 transition-colors cursor-pointer"
           >
             <Save className="w-4 h-4" />
-            {isNewDraft ? t('saveDive') : t('saveChanges')}
+            {saving ? '...' : isNewDraft ? t('saveDive') : t('saveChanges')}
           </button>
         </div>
       </form>
 
-      {/* Delete Confirmation Modal (#6) */}
+      {/* Delete Confirmation — Bottom Sheet on mobile, Dialog on sm+ */}
       {confirmDeleteOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl border border-slate-200 max-w-sm w-full p-5 space-y-4 shadow-xl">
-            <h2 className="text-base font-semibold text-slate-900">{t('deleteDive')}</h2>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-dive-title"
+          className="fixed inset-0 z-50 bg-slate-900/60 flex items-end sm:items-center justify-center sm:p-4"
+        >
+          <div className="bg-white rounded-t-2xl sm:rounded-xl border border-slate-200 max-w-sm w-full p-5 pb-[max(1.25rem,var(--safe-bottom))] sm:pb-5 max-h-[85dvh] overflow-y-auto space-y-4 shadow-xl">
+            <h2 id="delete-dive-title" className="text-base font-semibold text-slate-900">
+              {t('deleteDive')}
+            </h2>
             <p className="text-sm text-slate-600">{t('confirmDeleteDive')}</p>
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setConfirmDeleteOpen(false)}
-                className="rounded-lg border border-slate-300 px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+                className="rounded-lg border border-slate-300 px-3.5 py-2.5 sm:py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
               >
                 {t('cancel')}
               </button>
               <button
                 type="button"
                 onClick={() => void handleConfirmDelete()}
-                className="rounded-lg bg-red-600 hover:bg-red-700 px-3.5 py-2 text-xs font-medium text-white cursor-pointer"
+                className="rounded-lg bg-red-600 hover:bg-red-700 active:bg-red-800 px-3.5 py-2.5 sm:py-2 text-xs font-medium text-white cursor-pointer"
               >
                 {t('delete')}
               </button>

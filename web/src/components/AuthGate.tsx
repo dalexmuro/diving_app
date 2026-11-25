@@ -58,7 +58,7 @@ export function AuthGate({
   }
 
   return (
-    <div className="min-h-dvh flex flex-col justify-between bg-[#0b192c] text-slate-100 p-6">
+    <div className="min-h-dvh flex flex-col justify-between bg-[#0b192c] text-slate-100 pt-[max(1.5rem,var(--safe-top))] pb-[max(1.5rem,var(--safe-bottom))] pl-[max(1.5rem,var(--safe-left))] pr-[max(1.5rem,var(--safe-right))]">
       <header className="flex items-center justify-between max-w-md w-full mx-auto">
         <div className="flex items-center gap-2.5">
           <img src="/icon.svg" alt="" className="w-8 h-8 rounded-lg" />
@@ -128,7 +128,7 @@ export function AuthGate({
       </main>
 
       <footer className="max-w-md w-full mx-auto text-center text-xs text-slate-400">
-        Suunto Nautic · Cloudflare D1 &amp; R2 · Offline PWA
+        Suunto Nautic · Logbook &amp; Telemetry
       </footer>
     </div>
   );

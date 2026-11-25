@@ -9,19 +9,30 @@ export interface Env extends FullBackendEnv {
   ENVIRONMENT: string;
 }
 
-function applyCorsHeaders(response: Response, requestOrigin: string | null, allowedOrigin?: string): Response {
+function applyApiHeaders(
+  response: Response,
+  requestOrigin: string | null,
+  allowedOrigin: string | undefined,
+  isPrivateApi: boolean,
+): Response {
+  const headers = new Headers(response.headers);
+  if (isPrivateApi) {
+    headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    headers.set('Pragma', 'no-cache');
+  }
+
   const originToAllow =
     requestOrigin &&
     (requestOrigin === allowedOrigin || requestOrigin === 'http://localhost:5173')
       ? requestOrigin
       : null;
-  if (!originToAllow) return response;
+  if (originToAllow) {
+    headers.set('Access-Control-Allow-Origin', originToAllow);
+    headers.set('Access-Control-Allow-Credentials', 'true');
+    headers.set('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+    headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  }
 
-  const headers = new Headers(response.headers);
-  headers.set('Access-Control-Allow-Origin', originToAllow);
-  headers.set('Access-Control-Allow-Credentials', 'true');
-  headers.set('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
-  headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
@@ -33,13 +44,14 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const reqOrigin = request.headers.get('Origin');
     if (request.method === 'OPTIONS') {
-      return applyCorsHeaders(new Response(null, { status: 204 }), reqOrigin, env.APP_ORIGIN);
+      return applyApiHeaders(new Response(null, { status: 204 }), reqOrigin, env.APP_ORIGIN, false);
     }
 
     const url = new URL(request.url);
     let response: Response | null = null;
+    const isHealth = url.pathname === '/api/health';
 
-    if (url.pathname === '/api/health') {
+    if (isHealth) {
       response = Response.json({
         ok: true,
         service: 'diving-app-api',
@@ -61,6 +73,6 @@ export default {
     if (!response) {
       response = Response.json({ error: 'Not found' }, { status: 404 });
     }
-    return applyCorsHeaders(response, reqOrigin, env.APP_ORIGIN);
+    return applyApiHeaders(response, reqOrigin, env.APP_ORIGIN, !isHealth);
   },
 };

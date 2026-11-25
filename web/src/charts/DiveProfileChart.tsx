@@ -1,5 +1,13 @@
 import { AlertTriangle, X } from 'lucide-react';
-import { type MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type KeyboardEvent,
+  type PointerEvent,
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { usePreferences } from '../i18n/I18nContext';
 import {
   convertDepth,
@@ -54,16 +62,7 @@ function loadLayerPrefs(): ChartLayerPrefs {
   }
 }
 
-const SVG_W = 920;
-const SVG_H = 330;
-const PAD_LEFT = 54;
-const PAD_RIGHT = 54;
-const PAD_TOP = 18;
-const PAD_BOTTOM = 34;
-const PLOT_W = SVG_W - PAD_LEFT - PAD_RIGHT;
-const PLOT_H = SVG_H - PAD_TOP - PAD_BOTTOM;
-
-export function DiveProfileChart({
+export const DiveProfileChart = memo(function DiveProfileChart({
   samples,
   totalDurationS,
   startPressureBar,
@@ -71,9 +70,25 @@ export function DiveProfileChart({
   decoStops = [],
 }: DiveProfileChartProps) {
   const { unitSystem, ascentLimitMMin, t } = usePreferences();
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const draggingRef = useRef(false);
+
   const [selected, setSelected] = useState<PlottedProfilePoint | null>(null);
   const [layers, setLayers] = useState<ChartLayerPrefs>(loadLayerPrefs);
+  const [containerWidth, setContainerWidth] = useState(920);
+
+  // Observe container width so SVG coordinate system adapts cleanly to mobile vs desktop
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w && w > 0) setContainerWidth(Math.round(w));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     try {
@@ -88,88 +103,203 @@ export function DiveProfileChart({
     [samples, ascentLimitMMin, startPressureBar, endPressureBar],
   );
 
-  if (profile.points.length === 0) {
+  // Adaptive SVG dimensions so axis text remains crisp & readable on 360px Android phones
+  const isCompact = containerWidth < 540;
+  const svgW = isCompact ? Math.max(340, containerWidth) : 920;
+  const svgH = isCompact ? 235 : 330;
+  const padLeft = isCompact ? 42 : 54;
+  const padRight = isCompact ? 42 : 54;
+  const padTop = 18;
+  const padBottom = 30;
+  const plotW = svgW - padLeft - padRight;
+  const plotH = svgH - padTop - padBottom;
+
+  // Precompute all SVG paths in useMemo so scrubbing/tapping never rebuilds path strings
+  const geometry = useMemo(() => {
+    if (profile.points.length === 0) return null;
+
+    const toX = (p: PlottedProfilePoint) => padLeft + p.xRatio * plotW;
+    const toY = (p: PlottedProfilePoint) => padTop + p.yRatio * plotH;
+
+    const tempPoints = profile.points.filter((p) => p.tempC != null);
+    const minTempC =
+      tempPoints.length > 0 ? Math.floor(Math.min(...tempPoints.map((p) => p.tempC!)) - 1) : 10;
+    const maxTempC =
+      tempPoints.length > 0 ? Math.ceil(Math.max(...tempPoints.map((p) => p.tempC!)) + 1) : 25;
+    const tempSpan = Math.max(2, maxTempC - minTempC);
+    const tempToY = (c: number) => padTop + (1 - (c - minTempC) / tempSpan) * plotH;
+
+    const pressurePoints = profile.points.filter((p) => p.pressureBar != null);
+    const maxPressure =
+      pressurePoints.length > 0 ? Math.max(200, ...pressurePoints.map((p) => p.pressureBar!)) : 200;
+    const pressureToY = (bar: number) => padTop + (1 - bar / maxPressure) * plotH;
+
+    const maxSpeed = Math.max(25, profile.peakAscentRateMMin);
+    const speedPoints = profile.points.filter(
+      (p) => p.ascentRateMMin != null && p.ascentRateMMin > 0,
+    );
+    const speedToY = (rate: number) => padTop + (1 - Math.min(1, rate / maxSpeed)) * plotH;
+
+    const areaPath = [
+      `M ${toX(profile.points[0]).toFixed(1)} ${padTop}`,
+      ...profile.points.map((p) => `L ${toX(p).toFixed(1)} ${toY(p).toFixed(1)}`),
+      `L ${toX(profile.points[profile.points.length - 1]).toFixed(1)} ${padTop}`,
+      'Z',
+    ].join(' ');
+
+    // Merge all curve segments into 2 crisp <path> elements instead of up to 2,800 <line> DOM nodes
+    const fullLinePath = profile.points
+      .map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${toX(p).toFixed(1)} ${toY(p).toFixed(1)}`)
+      .join(' ');
+
+    const alertPathParts: string[] = [];
+    for (const seg of profile.segments) {
+      if (seg.exceedsAscentLimit) {
+        alertPathParts.push(
+          `M ${toX(seg.from).toFixed(1)} ${toY(seg.from).toFixed(1)} L ${toX(seg.to).toFixed(1)} ${toY(seg.to).toFixed(1)}`,
+        );
+      }
+    }
+    const alertPath = alertPathParts.join(' ');
+
+    const tempPath =
+      tempPoints.length > 1
+        ? tempPoints
+            .map(
+              (p, idx) =>
+                `${idx === 0 ? 'M' : 'L'} ${toX(p).toFixed(1)} ${tempToY(p.tempC!).toFixed(1)}`,
+            )
+            .join(' ')
+        : '';
+
+    const pressurePath =
+      pressurePoints.length > 1
+        ? pressurePoints
+            .map(
+              (p, idx) =>
+                `${idx === 0 ? 'M' : 'L'} ${toX(p).toFixed(1)} ${pressureToY(p.pressureBar!).toFixed(1)}`,
+            )
+            .join(' ')
+        : '';
+
+    const speedPath =
+      speedPoints.length > 1
+        ? speedPoints
+            .map(
+              (p, idx) =>
+                `${idx === 0 ? 'M' : 'L'} ${toX(p).toFixed(1)} ${speedToY(p.ascentRateMMin!).toFixed(1)}`,
+            )
+            .join(' ')
+        : '';
+
+    const violationPoints = profile.points.filter((p) => p.exceedsAscentLimit);
+
+    return {
+      areaPath,
+      fullLinePath,
+      alertPath,
+      tempPath,
+      pressurePath,
+      speedPath,
+      violationPoints,
+      hasTemp: tempPoints.length > 0,
+      maxTempC,
+      tempSpan,
+    };
+  }, [profile, padLeft, padTop, plotW, plotH]);
+
+  if (!geometry || profile.points.length === 0) {
     return null;
   }
 
-  const toX = (p: PlottedProfilePoint) => PAD_LEFT + p.xRatio * PLOT_W;
-  const toY = (p: PlottedProfilePoint) => PAD_TOP + p.yRatio * PLOT_H;
+  const toX = (p: PlottedProfilePoint) => padLeft + p.xRatio * plotW;
+  const toY = (p: PlottedProfilePoint) => padTop + p.yRatio * plotH;
 
-  // Temperature Y-scale (Right Axis, green, like Suunto DM5)
-  const tempPoints = profile.points.filter((p) => p.tempC != null);
-  const minTempC = tempPoints.length > 0 ? Math.floor(Math.min(...tempPoints.map((p) => p.tempC!)) - 1) : 10;
-  const maxTempC = tempPoints.length > 0 ? Math.ceil(Math.max(...tempPoints.map((p) => p.tempC!)) + 1) : 25;
-  const tempSpan = Math.max(2, maxTempC - minTempC);
-  const tempToY = (c: number) => PAD_TOP + (1 - (c - minTempC) / tempSpan) * PLOT_H;
-
-  // Pressure Y-scale (optional overlay)
-  const pressurePoints = profile.points.filter((p) => p.pressureBar != null);
-  const maxPressure = pressurePoints.length > 0 ? Math.max(200, ...pressurePoints.map((p) => p.pressureBar!)) : 200;
-  const pressureToY = (bar: number) => PAD_TOP + (1 - bar / maxPressure) * PLOT_H;
-
-  // Ascent speed overlay (0 to max(25, peak) m/min)
-  const maxSpeed = Math.max(25, profile.peakAscentRateMMin);
-  const speedPoints = profile.points.filter((p) => p.ascentRateMMin != null && p.ascentRateMMin > 0);
-  const speedToY = (rate: number) => PAD_TOP + (1 - Math.min(1, rate / maxSpeed)) * PLOT_H;
-
-  const areaPath = [
-    `M ${toX(profile.points[0])} ${PAD_TOP}`,
-    ...profile.points.map((p) => `L ${toX(p)} ${toY(p)}`),
-    `L ${toX(profile.points[profile.points.length - 1])} ${PAD_TOP}`,
-    'Z',
-  ].join(' ');
-
-  const tempPath =
-    tempPoints.length > 1
-      ? tempPoints
-          .map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${toX(p)} ${tempToY(p.tempC!)}`)
-          .join(' ')
-      : '';
-
-  const pressurePath =
-    pressurePoints.length > 1
-      ? pressurePoints
-          .map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${toX(p)} ${pressureToY(p.pressureBar!)}`)
-          .join(' ')
-      : '';
-
-  const speedPath =
-    speedPoints.length > 1
-      ? speedPoints
-          .map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${toX(p)} ${speedToY(p.ascentRateMMin!)}`)
-          .join(' ')
-      : '';
-
-  function handleChartClick(e: MouseEvent<SVGSVGElement>) {
+  function selectAtClientX(clientX: number) {
     const svg = svgRef.current;
     if (!svg) return;
     const rect = svg.getBoundingClientRect();
-    const scaleX = SVG_W / rect.width;
-    const svgX = (e.clientX - rect.left) * scaleX;
-    const ratio = (svgX - PAD_LEFT) / PLOT_W;
+    if (rect.width <= 0) return;
+    const scaleX = svgW / rect.width;
+    const svgX = (clientX - rect.left) * scaleX;
+    const ratio = (svgX - padLeft) / plotW;
     const nearest = findNearestProfilePoint(profile.points, ratio);
     setSelected(nearest);
   }
 
+  function handlePointerDown(e: PointerEvent<SVGSVGElement>) {
+    draggingRef.current = true;
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore capture errors on synthetic events
+    }
+    selectAtClientX(e.clientX);
+  }
+
+  function handlePointerMove(e: PointerEvent<SVGSVGElement>) {
+    if (!draggingRef.current) return;
+    selectAtClientX(e.clientX);
+  }
+
+  function handlePointerUp(e: PointerEvent<SVGSVGElement>) {
+    draggingRef.current = false;
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  function handleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key === 'Escape') {
+      setSelected(null);
+      return;
+    }
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      e.preventDefault();
+      const step = Math.max(1, Math.round(profile.points.length / 40));
+      const currIdx = selected ? selected.index : 0;
+      const nextIdx =
+        e.key === 'ArrowRight'
+          ? Math.min(profile.points.length - 1, currIdx + step)
+          : Math.max(0, currIdx - step);
+      setSelected(profile.points[nextIdx]);
+    }
+  }
+
   const yTicks = [0, 0.25, 0.5, 0.75, 1];
-  const xTicks = [0, 0.2, 0.4, 0.6, 0.8, 1];
+  const xTicks = isCompact ? [0, 0.33, 0.66, 1] : [0, 0.2, 0.4, 0.6, 0.8, 1];
   const effectiveTotalDuration = totalDurationS ?? profile.maxElapsedS;
 
   const toggleLayer = (key: keyof ChartLayerPrefs) =>
     setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
 
   return (
-    <div className="panel-surface p-5 space-y-4 relative">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="panel-surface p-4 sm:p-5 space-y-3.5 relative">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-semibold text-slate-900">{t('diveProfile')}</h2>
+        {!selected && <span className="text-xs text-slate-500">{t('chartTapHint')}</span>}
       </div>
 
-      <div className="relative select-none">
+      <div
+        ref={containerRef}
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+        aria-label={t('diveProfile')}
+        className="relative select-none rounded-lg focus-visible:outline-2 focus-visible:outline-sky-600"
+      >
         <svg
           ref={svgRef}
-          viewBox={`0 0 ${SVG_W} ${SVG_H}`}
-          onClick={handleChartClick}
-          className="w-full h-auto cursor-crosshair overflow-visible"
+          viewBox={`0 0 ${svgW} ${svgH}`}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          style={{ touchAction: 'pan-y' }}
+          className="w-full h-auto max-h-[55dvh] cursor-crosshair overflow-visible"
           role="img"
           aria-label={t('diveProfile')}
         >
@@ -182,20 +312,20 @@ export function DiveProfileChart({
 
           {/* Horizontal Depth Gridlines & Left Depth Axis */}
           {yTicks.map((ratio) => {
-            const y = PAD_TOP + ratio * PLOT_H;
+            const y = padTop + ratio * plotH;
             const depthVal = convertDepth(ratio * profile.maxDepthM, unitSystem);
             return (
               <g key={`y-${ratio}`}>
                 <line
-                  x1={PAD_LEFT}
+                  x1={padLeft}
                   y1={y}
-                  x2={SVG_W - PAD_RIGHT}
+                  x2={svgW - padRight}
                   y2={y}
                   stroke="#e2e8f0"
                   strokeDasharray={ratio === 0 ? undefined : '4 4'}
                 />
                 <text
-                  x={PAD_LEFT - 8}
+                  x={padLeft - 6}
                   y={y + 4}
                   textAnchor="end"
                   className="fill-slate-600 text-[11px] tabular-telemetry"
@@ -207,17 +337,17 @@ export function DiveProfileChart({
             );
           })}
 
-          {/* Right Temperature Axis (when Agua/Temp layer is active) */}
+          {/* Right Temperature Axis */}
           {layers.showTemp &&
-            tempPoints.length > 0 &&
+            geometry.hasTemp &&
             yTicks.map((ratio) => {
-              const y = PAD_TOP + ratio * PLOT_H;
-              const tempC = maxTempC - ratio * tempSpan;
+              const y = padTop + ratio * plotH;
+              const tempC = geometry.maxTempC - ratio * geometry.tempSpan;
               const dispTemp = Math.round(convertTemp(tempC, unitSystem));
               return (
                 <text
                   key={`t-${ratio}`}
-                  x={SVG_W - PAD_RIGHT + 8}
+                  x={svgW - padRight + 6}
                   y={y + 4}
                   textAnchor="start"
                   className="fill-emerald-700 text-[11px] tabular-telemetry"
@@ -229,13 +359,13 @@ export function DiveProfileChart({
 
           {/* Bottom Time Axis */}
           {xTicks.map((ratio) => {
-            const x = PAD_LEFT + ratio * PLOT_W;
+            const x = padLeft + ratio * plotW;
             const sec = Math.round(ratio * profile.maxElapsedS);
             return (
               <text
                 key={`x-${ratio}`}
                 x={x}
-                y={SVG_H - 8}
+                y={svgH - 6}
                 textAnchor="middle"
                 className="fill-slate-600 text-[11px] tabular-telemetry"
               >
@@ -245,26 +375,26 @@ export function DiveProfileChart({
           })}
 
           {/* Ocean Depth Gradient Fill */}
-          <path d={areaPath} fill="url(#diveDepthFill)" />
+          <path d={geometry.areaPath} fill="url(#diveDepthFill)" />
 
           {/* Deco / Safety Stops Reference Lines */}
           {layers.showStops &&
             decoStops.map((stop, idx) => {
               if (stop.depth_m > profile.maxDepthM) return null;
-              const y = PAD_TOP + (stop.depth_m / profile.maxDepthM) * PLOT_H;
+              const y = padTop + (stop.depth_m / profile.maxDepthM) * plotH;
               return (
                 <g key={`stop-${idx}`}>
                   <line
-                    x1={PAD_LEFT}
+                    x1={padLeft}
                     y1={y}
-                    x2={SVG_W - PAD_RIGHT}
+                    x2={svgW - padRight}
                     y2={y}
                     stroke="#7c3aed"
                     strokeWidth={1.25}
                     strokeDasharray="6 4"
                   />
                   <text
-                    x={PAD_LEFT + 6}
+                    x={padLeft + 6}
                     y={y - 4}
                     className="fill-violet-700 text-[10px] font-medium tabular-telemetry"
                   >
@@ -274,32 +404,36 @@ export function DiveProfileChart({
               );
             })}
 
-          {/* Profile Curve Segments */}
-          {profile.segments.map((seg) => {
-            const isRed = layers.showAlerts && seg.exceedsAscentLimit;
-            return (
-              <line
-                key={seg.to.index}
-                x1={toX(seg.from)}
-                y1={toY(seg.from)}
-                x2={toX(seg.to)}
-                y2={toY(seg.to)}
-                stroke={isRed ? '#dc2626' : '#0369a1'}
-                strokeWidth={isRed ? 3.2 : 2.1}
-                strokeLinecap="round"
-              />
-            );
-          })}
+          {/* Merged Base Profile Curve (1 DOM node instead of thousands) */}
+          <path
+            d={geometry.fullLinePath}
+            fill="none"
+            stroke="#0369a1"
+            strokeWidth={2.1}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+
+          {/* Merged Ascent Alert Segments (1 DOM node) */}
+          {layers.showAlerts && geometry.alertPath && (
+            <path
+              d={geometry.alertPath}
+              fill="none"
+              stroke="#dc2626"
+              strokeWidth={3.2}
+              strokeLinecap="round"
+            />
+          )}
 
           {/* Overlaid Green Water Temperature Curve */}
-          {layers.showTemp && tempPath && (
-            <path d={tempPath} fill="none" stroke="#059669" strokeWidth={1.8} />
+          {layers.showTemp && geometry.tempPath && (
+            <path d={geometry.tempPath} fill="none" stroke="#059669" strokeWidth={1.8} />
           )}
 
           {/* Optional Tank Pressure Curve */}
-          {layers.showPressure && pressurePath && (
+          {layers.showPressure && geometry.pressurePath && (
             <path
-              d={pressurePath}
+              d={geometry.pressurePath}
               fill="none"
               stroke="#4f46e5"
               strokeWidth={1.6}
@@ -308,9 +442,9 @@ export function DiveProfileChart({
           )}
 
           {/* Optional Ascent Speed Overlay */}
-          {layers.showSpeed && speedPath && (
+          {layers.showSpeed && geometry.speedPath && (
             <path
-              d={speedPath}
+              d={geometry.speedPath}
               fill="none"
               stroke="#d97706"
               strokeWidth={1.5}
@@ -320,28 +454,26 @@ export function DiveProfileChart({
 
           {/* Red Violation Dots */}
           {layers.showAlerts &&
-            profile.points
-              .filter((p) => p.exceedsAscentLimit)
-              .map((p) => (
-                <circle
-                  key={`v-${p.index}`}
-                  cx={toX(p)}
-                  cy={toY(p)}
-                  r={4}
-                  fill="#dc2626"
-                  stroke="#ffffff"
-                  strokeWidth={1.5}
-                />
-              ))}
+            geometry.violationPoints.map((p) => (
+              <circle
+                key={`v-${p.index}`}
+                cx={toX(p)}
+                cy={toY(p)}
+                r={3.8}
+                fill="#dc2626"
+                stroke="#ffffff"
+                strokeWidth={1.5}
+              />
+            ))}
 
           {/* Selected Point Crosshair & Marker */}
           {selected && (
             <g>
               <line
                 x1={toX(selected)}
-                y1={PAD_TOP}
+                y1={padTop}
                 x2={toX(selected)}
-                y2={PAD_TOP + PLOT_H}
+                y2={padTop + plotH}
                 stroke="#0f172a"
                 strokeWidth={1.2}
                 strokeDasharray="3 3"
@@ -361,8 +493,8 @@ export function DiveProfileChart({
         {/* Interactive Point Popup */}
         {selected && (
           <div
-            role="dialog"
-            aria-label={t('diveProfile')}
+            role="status"
+            aria-live="polite"
             className="mt-3 md:mt-0 md:absolute md:top-2 md:right-14 z-10 w-full md:w-80 rounded-xl border border-slate-800 bg-[#0b192c] text-slate-100 p-3.5 shadow-lg space-y-2.5"
           >
             <div className="flex items-center justify-between border-b border-slate-800 pb-2">
@@ -380,11 +512,11 @@ export function DiveProfileChart({
               </div>
               <button
                 type="button"
-                aria-label="Close"
+                aria-label={t('cancel')}
                 onClick={() => setSelected(null)}
-                className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+                className="p-2 -m-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
@@ -431,58 +563,58 @@ export function DiveProfileChart({
         )}
       </div>
 
-      {/* Configurable Default Layer Checkboxes (Suunto DM5 style) */}
-      <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 pt-2 border-t border-slate-200 text-xs font-medium">
-        <label className="inline-flex items-center gap-1.5 cursor-pointer text-emerald-700">
+      {/* Configurable Default Layer Checkboxes (touch-friendly pills) */}
+      <div className="flex flex-wrap items-center justify-center gap-2 pt-2 border-t border-slate-200 text-xs font-medium">
+        <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-slate-50 cursor-pointer text-emerald-700">
           <input
             type="checkbox"
             checked={layers.showTemp}
             onChange={() => toggleLayer('showTemp')}
-            className="accent-emerald-600"
+            className="accent-emerald-600 w-4 h-4"
           />
           <span>{t('layerTemp')}</span>
         </label>
 
-        <label className="inline-flex items-center gap-1.5 cursor-pointer text-red-700">
+        <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-slate-50 cursor-pointer text-red-700">
           <input
             type="checkbox"
             checked={layers.showAlerts}
             onChange={() => toggleLayer('showAlerts')}
-            className="accent-red-600"
+            className="accent-red-600 w-4 h-4"
           />
           <span>{t('layerAlerts')}</span>
         </label>
 
-        <label className="inline-flex items-center gap-1.5 cursor-pointer text-amber-700">
+        <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-slate-50 cursor-pointer text-amber-700">
           <input
             type="checkbox"
             checked={layers.showSpeed}
             onChange={() => toggleLayer('showSpeed')}
-            className="accent-amber-600"
+            className="accent-amber-600 w-4 h-4"
           />
           <span>{t('layerSpeed')}</span>
         </label>
 
-        <label className="inline-flex items-center gap-1.5 cursor-pointer text-indigo-700">
+        <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-slate-50 cursor-pointer text-indigo-700">
           <input
             type="checkbox"
             checked={layers.showPressure}
             onChange={() => toggleLayer('showPressure')}
-            className="accent-indigo-600"
+            className="accent-indigo-600 w-4 h-4"
           />
           <span>{t('layerPressure')}</span>
         </label>
 
-        <label className="inline-flex items-center gap-1.5 cursor-pointer text-violet-700">
+        <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-slate-50 cursor-pointer text-violet-700">
           <input
             type="checkbox"
             checked={layers.showStops}
             onChange={() => toggleLayer('showStops')}
-            className="accent-violet-600"
+            className="accent-violet-600 w-4 h-4"
           />
           <span>{t('layerStops')}</span>
         </label>
       </div>
     </div>
   );
-}
+});

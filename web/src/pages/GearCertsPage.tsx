@@ -1,4 +1,4 @@
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Pencil, Plus, Trash2, X } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { LocationPicker } from '../components/LocationPicker';
 import { usePreferences } from '../i18n/I18nContext';
@@ -20,6 +20,7 @@ type CatalogTab = 'gear' | 'centers' | 'buddies' | 'computers' | 'certs';
 export function GearCertsPage({ isOffline }: GearCertsPageProps) {
   const { t } = usePreferences();
   const [tab, setTab] = useState<CatalogTab>('gear');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const [gear, setGear] = useState<GearItem[]>([]);
   const [centers, setCenters] = useState<DiveCenter[]>([]);
@@ -27,14 +28,14 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
   const [computers, setComputers] = useState<DiveComputer[]>([]);
   const [certs, setCerts] = useState<Certification[]>([]);
 
-  // Gear form (#10: Name, Brand, Model, Notes)
+  // Gear form (Name, Brand, Model, Notes)
   const [gearId, setGearId] = useState<string | undefined>(undefined);
   const [gearName, setGearName] = useState('');
   const [gearBrand, setGearBrand] = useState('');
   const [gearModel, setGearModel] = useState('');
   const [gearNotes, setGearNotes] = useState('');
 
-  // Centers form (#5 & #11)
+  // Centers form
   const [centerId, setCenterId] = useState<string | undefined>(undefined);
   const [centerName, setCenterName] = useState('');
   const [centerLoc, setCenterLoc] = useState('');
@@ -61,24 +62,80 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
   const [certNumber, setCertNumber] = useState('');
   const [issuedDate, setIssuedDate] = useState('');
 
-  async function reloadAll() {
-    const [g, c, b, comp, cr] = await Promise.all([
+  async function reloadCatalog(target: CatalogTab) {
+    switch (target) {
+      case 'gear':
+        setGear((await apiClient.fetchGear()).data);
+        break;
+      case 'centers':
+        setCenters((await apiClient.fetchCenters()).data);
+        break;
+      case 'buddies':
+        setBuddies((await apiClient.fetchBuddies()).data);
+        break;
+      case 'computers':
+        setComputers((await apiClient.fetchComputers()).data);
+        break;
+      case 'certs':
+        setCerts((await apiClient.fetchCertifications()).data);
+        break;
+    }
+  }
+
+  useEffect(() => {
+    void Promise.all([
       apiClient.fetchGear(),
       apiClient.fetchCenters(),
       apiClient.fetchBuddies(),
       apiClient.fetchComputers(),
       apiClient.fetchCertifications(),
-    ]);
-    setGear(g.data);
-    setCenters(c.data);
-    setBuddies(b.data);
-    setComputers(comp.data);
-    setCerts(cr.data);
+    ]).then(([g, c, b, comp, cr]) => {
+      setGear(g.data);
+      setCenters(c.data);
+      setBuddies(b.data);
+      setComputers(comp.data);
+      setCerts(cr.data);
+    });
+  }, []);
+
+  function resetGearForm() {
+    setGearId(undefined);
+    setGearName('');
+    setGearBrand('');
+    setGearModel('');
+    setGearNotes('');
   }
 
-  useEffect(() => {
-    void reloadAll();
-  }, []);
+  function resetCenterForm() {
+    setCenterId(undefined);
+    setCenterName('');
+    setCenterLoc('');
+    setCenterLat('');
+    setCenterLng('');
+    setCenterNotes('');
+  }
+
+  function resetBuddyForm() {
+    setBuddyId(undefined);
+    setBuddyName('');
+    setBuddyNotes('');
+  }
+
+  function resetCompForm() {
+    setCompId(undefined);
+    setCompName('');
+    setCompBrand('');
+    setCompModel('');
+    setCompNotes('');
+  }
+
+  function resetCertForm() {
+    setCertId(undefined);
+    setAgency('');
+    setLevel('');
+    setCertNumber('');
+    setIssuedDate('');
+  }
 
   async function handleSaveGear(e: FormEvent) {
     e.preventDefault();
@@ -90,12 +147,8 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
       model: gearModel.trim() || null,
       notes: gearNotes.trim() || null,
     });
-    setGearId(undefined);
-    setGearName('');
-    setGearBrand('');
-    setGearModel('');
-    setGearNotes('');
-    await reloadAll();
+    resetGearForm();
+    await reloadCatalog('gear');
   }
 
   async function handleSaveCenter(e: FormEvent) {
@@ -109,13 +162,8 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
       longitude: centerLng ? Number(centerLng) : null,
       notes: centerNotes.trim() || null,
     });
-    setCenterId(undefined);
-    setCenterName('');
-    setCenterLoc('');
-    setCenterLat('');
-    setCenterLng('');
-    setCenterNotes('');
-    await reloadAll();
+    resetCenterForm();
+    await reloadCatalog('centers');
   }
 
   async function handleSaveBuddy(e: FormEvent) {
@@ -126,10 +174,8 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
       name: buddyName.trim(),
       notes: buddyNotes.trim() || null,
     });
-    setBuddyId(undefined);
-    setBuddyName('');
-    setBuddyNotes('');
-    await reloadAll();
+    resetBuddyForm();
+    await reloadCatalog('buddies');
   }
 
   async function handleSaveComputer(e: FormEvent) {
@@ -142,12 +188,8 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
       model: compModel.trim() || null,
       notes: compNotes.trim() || null,
     });
-    setCompId(undefined);
-    setCompName('');
-    setCompBrand('');
-    setCompModel('');
-    setCompNotes('');
-    await reloadAll();
+    resetCompForm();
+    await reloadCatalog('computers');
   }
 
   async function handleSaveCert(e: FormEvent) {
@@ -160,12 +202,18 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
       cert_number: certNumber.trim() || null,
       issued_date: issuedDate || null,
     });
-    setCertId(undefined);
-    setAgency('');
-    setLevel('');
-    setCertNumber('');
-    setIssuedDate('');
-    await reloadAll();
+    resetCertForm();
+    await reloadCatalog('certs');
+  }
+
+  async function executeDelete(kind: CatalogTab, id: string) {
+    setConfirmDeleteId(null);
+    if (kind === 'gear') await apiClient.deleteGear(id);
+    else if (kind === 'centers') await apiClient.deleteCenter(id);
+    else if (kind === 'buddies') await apiClient.deleteBuddy(id);
+    else if (kind === 'computers') await apiClient.deleteComputer(id);
+    else if (kind === 'certs') await apiClient.deleteCertification(id);
+    await reloadCatalog(kind);
   }
 
   const tabs: Array<{ id: CatalogTab; label: string; count: number }> = [
@@ -176,139 +224,217 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
     { id: 'certs', label: t('certsTitle'), count: certs.length },
   ];
 
+  function renderRowActions(kind: CatalogTab, id: string, onEdit: () => void) {
+    if (isOffline) return null;
+    if (confirmDeleteId === id) {
+      return (
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => setConfirmDeleteId(null)}
+            className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+          >
+            {t('cancel')}
+          </button>
+          <button
+            type="button"
+            onClick={() => void executeDelete(kind, id)}
+            className="px-2.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-xs font-medium text-white cursor-pointer"
+          >
+            {t('delete')}
+          </button>
+        </div>
+      );
+    }
+    return (
+      <div className="flex items-center gap-1.5 shrink-0">
+        <button
+          type="button"
+          aria-label={t('edit')}
+          onClick={onEdit}
+          className="touch-target flex items-center justify-center rounded-lg text-slate-500 hover:text-sky-700 hover:bg-sky-50 active:bg-sky-100 cursor-pointer"
+        >
+          <Pencil className="w-4 h-4" />
+        </button>
+        <button
+          type="button"
+          aria-label={t('delete')}
+          onClick={() => setConfirmDeleteId(id)}
+          className="touch-target flex items-center justify-center rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 active:bg-red-100 cursor-pointer"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <section className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+    <section className="space-y-5">
+      <h1 className="text-[clamp(1.35rem,2.5vw,1.6rem)] font-semibold tracking-tight text-slate-900">
         {t('navGearCerts')}
       </h1>
 
-      {/* Catalog Category Tabs */}
-      <div className="flex flex-wrap gap-2">
-        {tabs.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => setTab(item.id)}
-            className={`px-3.5 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-              tab === item.id
-                ? 'bg-[#0b192c] text-white'
-                : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
-            }`}
-          >
-            {item.label}{' '}
-            <span className="opacity-75 tabular-telemetry">({item.count})</span>
-          </button>
-        ))}
+      {/* Scrollable horizontal tabs on mobile, wrapped on sm+ */}
+      <div
+        role="tablist"
+        aria-label={t('navGearCerts')}
+        className="flex items-center gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible"
+      >
+        {tabs.map((item) => {
+          const active = tab === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => {
+                setTab(item.id);
+                setConfirmDeleteId(null);
+              }}
+              className={`px-3.5 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer shrink-0 ${
+                active
+                  ? 'bg-sky-600 text-white'
+                  : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              {item.label}{' '}
+              <span className="opacity-80 tabular-telemetry">({item.count})</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* 1. Gear (Name, Brand, Model, Notes) */}
       {tab === 'gear' && (
-        <div className="panel-surface p-5 space-y-4">
-          <h2 className="text-base font-semibold text-slate-900">{t('gearTitle')}</h2>
+        <div className="panel-surface p-4 sm:p-5 space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-semibold text-slate-900">{t('gearTitle')}</h2>
+            {gearId && (
+              <button
+                type="button"
+                onClick={resetGearForm}
+                className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+                {t('editingLabel')} · {t('cancel')}
+              </button>
+            )}
+          </div>
           {!isOffline && (
-            <form onSubmit={(e) => void handleSaveGear(e)} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
-              <input
-                type="text"
-                required
-                placeholder={t('gearName')}
-                value={gearName}
-                onChange={(e) => setGearName(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
-              />
-              <input
-                type="text"
-                placeholder={t('gearBrand')}
-                value={gearBrand}
-                onChange={(e) => setGearBrand(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
-              />
-              <input
-                type="text"
-                placeholder={t('gearModel')}
-                value={gearModel}
-                onChange={(e) => setGearModel(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
-              />
-              <input
-                type="text"
-                placeholder={t('notes')}
-                value={gearNotes}
-                onChange={(e) => setGearNotes(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
-              />
+            <form
+              onSubmit={(e) => void handleSaveGear(e)}
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end"
+            >
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('gearName')}</span>
+                <input
+                  type="text"
+                  required
+                  value={gearName}
+                  onChange={(e) => setGearName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
+                />
+              </label>
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('gearBrand')}</span>
+                <input
+                  type="text"
+                  value={gearBrand}
+                  onChange={(e) => setGearBrand(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
+                />
+              </label>
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('gearModel')}</span>
+                <input
+                  type="text"
+                  value={gearModel}
+                  onChange={(e) => setGearModel(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
+                />
+              </label>
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('notes')}</span>
+                <input
+                  type="text"
+                  value={gearNotes}
+                  onChange={(e) => setGearNotes(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
+                />
+              </label>
               <button
                 type="submit"
-                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium px-3 py-2 cursor-pointer"
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white text-sm font-medium px-3 py-2 cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
-                {t('addGear')}
+                {gearId ? t('saveChanges') : t('addGear')}
               </button>
             </form>
           )}
           <ul className="divide-y divide-slate-200">
             {gear.map((item) => (
               <li key={item.id} className="py-3 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium text-slate-900">{item.name}</p>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-900 truncate">{item.name}</p>
                   <p className="text-xs text-slate-500">
-                    {[item.brand, item.model].filter(Boolean).join(' · ') || item.brand_model || '—'}
+                    {[item.brand, item.model].filter(Boolean).join(' · ') ||
+                      item.brand_model ||
+                      '—'}
                     {item.notes ? ` — ${item.notes}` : ''}
                   </p>
                 </div>
-                {!isOffline && (
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      aria-label={t('edit')}
-                      onClick={() => {
-                        setGearId(item.id);
-                        setGearName(item.name);
-                        setGearBrand(item.brand ?? '');
-                        setGearModel(item.model ?? '');
-                        setGearNotes(item.notes ?? '');
-                      }}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-sky-700 hover:bg-sky-50 cursor-pointer"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={t('delete')}
-                      onClick={() => void apiClient.deleteGear(item.id).then(reloadAll)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
+                {renderRowActions('gear', item.id, () => {
+                  setGearId(item.id);
+                  setGearName(item.name);
+                  setGearBrand(item.brand ?? '');
+                  setGearModel(item.model ?? '');
+                  setGearNotes(item.notes ?? '');
+                })}
               </li>
             ))}
           </ul>
         </div>
       )}
 
-      {/* 2. Dive Centers (with Location Search & GPS) */}
+      {/* 2. Dive Centers */}
       {tab === 'centers' && (
-        <div className="panel-surface p-5 space-y-4">
-          <h2 className="text-base font-semibold text-slate-900">{t('centersTitle')}</h2>
+        <div className="panel-surface p-4 sm:p-5 space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-semibold text-slate-900">{t('centersTitle')}</h2>
+            {centerId && (
+              <button
+                type="button"
+                onClick={resetCenterForm}
+                className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+                {t('editingLabel')} · {t('cancel')}
+              </button>
+            )}
+          </div>
           {!isOffline && (
             <form onSubmit={(e) => void handleSaveCenter(e)} className="space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <input
-                  type="text"
-                  required
-                  placeholder={t('diveCenter')}
-                  value={centerName}
-                  onChange={(e) => setCenterName(e.target.value)}
-                  className="px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
-                />
-                <input
-                  type="text"
-                  placeholder={t('notes')}
-                  value={centerNotes}
-                  onChange={(e) => setCenterNotes(e.target.value)}
-                  className="px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="space-y-1 text-xs font-medium text-slate-700">
+                  <span>{t('diveCenter')}</span>
+                  <input
+                    type="text"
+                    required
+                    value={centerName}
+                    onChange={(e) => setCenterName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
+                  />
+                </label>
+                <label className="space-y-1 text-xs font-medium text-slate-700">
+                  <span>{t('notes')}</span>
+                  <input
+                    type="text"
+                    value={centerNotes}
+                    onChange={(e) => setCenterNotes(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
+                  />
+                </label>
               </div>
               <LocationPicker
                 label={t('centerLocation')}
@@ -325,18 +451,18 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
               />
               <button
                 type="submit"
-                className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium px-4 py-2 cursor-pointer"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white text-sm font-medium px-4 py-2 cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
-                {t('addCenter')}
+                {centerId ? t('saveChanges') : t('addCenter')}
               </button>
             </form>
           )}
           <ul className="divide-y divide-slate-200">
             {centers.map((c) => (
               <li key={c.id} className="py-3 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium text-slate-900">{c.name}</p>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-900 truncate">{c.name}</p>
                   <p className="text-xs text-slate-500 tabular-telemetry">
                     {c.location_text || '—'}
                     {c.latitude != null && c.longitude != null
@@ -344,33 +470,14 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
                       : ''}
                   </p>
                 </div>
-                {!isOffline && (
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      aria-label={t('edit')}
-                      onClick={() => {
-                        setCenterId(c.id);
-                        setCenterName(c.name);
-                        setCenterLoc(c.location_text ?? '');
-                        setCenterLat(c.latitude != null ? String(c.latitude) : '');
-                        setCenterLng(c.longitude != null ? String(c.longitude) : '');
-                        setCenterNotes(c.notes ?? '');
-                      }}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-sky-700 hover:bg-sky-50 cursor-pointer"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={t('delete')}
-                      onClick={() => void apiClient.deleteCenter(c.id).then(reloadAll)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
+                {renderRowActions('centers', c.id, () => {
+                  setCenterId(c.id);
+                  setCenterName(c.name);
+                  setCenterLoc(c.location_text ?? '');
+                  setCenterLat(c.latitude != null ? String(c.latitude) : '');
+                  setCenterLng(c.longitude != null ? String(c.longitude) : '');
+                  setCenterNotes(c.notes ?? '');
+                })}
               </li>
             ))}
           </ul>
@@ -379,65 +486,65 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
 
       {/* 3. Buddies */}
       {tab === 'buddies' && (
-        <div className="panel-surface p-5 space-y-4">
-          <h2 className="text-base font-semibold text-slate-900">{t('buddiesTitle')}</h2>
+        <div className="panel-surface p-4 sm:p-5 space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-semibold text-slate-900">{t('buddiesTitle')}</h2>
+            {buddyId && (
+              <button
+                type="button"
+                onClick={resetBuddyForm}
+                className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+                {t('editingLabel')} · {t('cancel')}
+              </button>
+            )}
+          </div>
           {!isOffline && (
-            <form onSubmit={(e) => void handleSaveBuddy(e)} className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              <input
-                type="text"
-                required
-                placeholder={t('gearName')}
-                value={buddyName}
-                onChange={(e) => setBuddyName(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
-              />
-              <input
-                type="text"
-                placeholder={t('notes')}
-                value={buddyNotes}
-                onChange={(e) => setBuddyNotes(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
-              />
+            <form
+              onSubmit={(e) => void handleSaveBuddy(e)}
+              className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end"
+            >
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('gearName')}</span>
+                <input
+                  type="text"
+                  required
+                  value={buddyName}
+                  onChange={(e) => setBuddyName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
+                />
+              </label>
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('notes')}</span>
+                <input
+                  type="text"
+                  value={buddyNotes}
+                  onChange={(e) => setBuddyNotes(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
+                />
+              </label>
               <button
                 type="submit"
-                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium px-3 py-2 cursor-pointer"
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white text-sm font-medium px-3 py-2 cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
-                {t('addBuddy')}
+                {buddyId ? t('saveChanges') : t('addBuddy')}
               </button>
             </form>
           )}
           <ul className="divide-y divide-slate-200">
             {buddies.map((b) => (
               <li key={b.id} className="py-3 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium text-slate-900">{b.name}</p>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-900 truncate">{b.name}</p>
                   {b.notes && <p className="text-xs text-slate-500">{b.notes}</p>}
                 </div>
-                {!isOffline && (
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      aria-label={t('edit')}
-                      onClick={() => {
-                        setBuddyId(b.id);
-                        setBuddyName(b.name);
-                        setBuddyNotes(b.notes ?? '');
-                      }}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-sky-700 hover:bg-sky-50 cursor-pointer"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={t('delete')}
-                      onClick={() => void apiClient.deleteBuddy(b.id).then(reloadAll)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
+                {renderRowActions('buddies', b.id, () => {
+                  setBuddyId(b.id);
+                  setBuddyName(b.name);
+                  setBuddyNotes(b.notes ?? '');
+                })}
               </li>
             ))}
           </ul>
@@ -446,84 +553,88 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
 
       {/* 4. Dive Computers */}
       {tab === 'computers' && (
-        <div className="panel-surface p-5 space-y-4">
-          <h2 className="text-base font-semibold text-slate-900">{t('computersTitle')}</h2>
+        <div className="panel-surface p-4 sm:p-5 space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-semibold text-slate-900">{t('computersTitle')}</h2>
+            {compId && (
+              <button
+                type="button"
+                onClick={resetCompForm}
+                className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+                {t('editingLabel')} · {t('cancel')}
+              </button>
+            )}
+          </div>
           {!isOffline && (
-            <form onSubmit={(e) => void handleSaveComputer(e)} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
-              <input
-                type="text"
-                required
-                placeholder={t('gearName')}
-                value={compName}
-                onChange={(e) => setCompName(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
-              />
-              <input
-                type="text"
-                placeholder={t('gearBrand')}
-                value={compBrand}
-                onChange={(e) => setCompBrand(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
-              />
-              <input
-                type="text"
-                placeholder={t('gearModel')}
-                value={compModel}
-                onChange={(e) => setCompModel(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
-              />
-              <input
-                type="text"
-                placeholder={t('notes')}
-                value={compNotes}
-                onChange={(e) => setCompNotes(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
-              />
+            <form
+              onSubmit={(e) => void handleSaveComputer(e)}
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end"
+            >
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('gearName')}</span>
+                <input
+                  type="text"
+                  required
+                  value={compName}
+                  onChange={(e) => setCompName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
+                />
+              </label>
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('gearBrand')}</span>
+                <input
+                  type="text"
+                  value={compBrand}
+                  onChange={(e) => setCompBrand(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
+                />
+              </label>
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('gearModel')}</span>
+                <input
+                  type="text"
+                  value={compModel}
+                  onChange={(e) => setCompModel(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
+                />
+              </label>
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('notes')}</span>
+                <input
+                  type="text"
+                  value={compNotes}
+                  onChange={(e) => setCompNotes(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
+                />
+              </label>
               <button
                 type="submit"
-                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium px-3 py-2 cursor-pointer"
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white text-sm font-medium px-3 py-2 cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
-                {t('addComputer')}
+                {compId ? t('saveChanges') : t('addComputer')}
               </button>
             </form>
           )}
           <ul className="divide-y divide-slate-200">
             {computers.map((c) => (
               <li key={c.id} className="py-3 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium text-slate-900">{c.name}</p>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-900 truncate">{c.name}</p>
                   <p className="text-xs text-slate-500">
                     {[c.brand, c.model].filter(Boolean).join(' · ') || '—'}
                     {c.notes ? ` — ${c.notes}` : ''}
                   </p>
                 </div>
-                {!isOffline && (
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      aria-label={t('edit')}
-                      onClick={() => {
-                        setCompId(c.id);
-                        setCompName(c.name);
-                        setCompBrand(c.brand ?? '');
-                        setCompModel(c.model ?? '');
-                        setCompNotes(c.notes ?? '');
-                      }}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-sky-700 hover:bg-sky-50 cursor-pointer"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={t('delete')}
-                      onClick={() => void apiClient.deleteComputer(c.id).then(reloadAll)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
+                {renderRowActions('computers', c.id, () => {
+                  setCompId(c.id);
+                  setCompName(c.name);
+                  setCompBrand(c.brand ?? '');
+                  setCompModel(c.model ?? '');
+                  setCompNotes(c.notes ?? '');
+                })}
               </li>
             ))}
           </ul>
@@ -532,53 +643,77 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
 
       {/* 5. Certifications */}
       {tab === 'certs' && (
-        <div className="panel-surface p-5 space-y-4">
-          <h2 className="text-base font-semibold text-slate-900">{t('certsTitle')}</h2>
+        <div className="panel-surface p-4 sm:p-5 space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-semibold text-slate-900">{t('certsTitle')}</h2>
+            {certId && (
+              <button
+                type="button"
+                onClick={resetCertForm}
+                className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+                {t('editingLabel')} · {t('cancel')}
+              </button>
+            )}
+          </div>
           {!isOffline && (
-            <form onSubmit={(e) => void handleSaveCert(e)} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
-              <input
-                type="text"
-                required
-                placeholder={t('certAgency')}
-                value={agency}
-                onChange={(e) => setAgency(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
-              />
-              <input
-                type="text"
-                required
-                placeholder={t('certLevel')}
-                value={level}
-                onChange={(e) => setLevel(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
-              />
-              <input
-                type="text"
-                placeholder={t('certNumber')}
-                value={certNumber}
-                onChange={(e) => setCertNumber(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
-              />
-              <input
-                type="date"
-                value={issuedDate}
-                onChange={(e) => setIssuedDate(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
-              />
+            <form
+              onSubmit={(e) => void handleSaveCert(e)}
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end"
+            >
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('certAgency')}</span>
+                <input
+                  type="text"
+                  required
+                  value={agency}
+                  onChange={(e) => setAgency(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
+                />
+              </label>
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('certLevel')}</span>
+                <input
+                  type="text"
+                  required
+                  value={level}
+                  onChange={(e) => setLevel(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
+                />
+              </label>
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('certNumber')}</span>
+                <input
+                  type="text"
+                  value={certNumber}
+                  onChange={(e) => setCertNumber(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
+                />
+              </label>
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('issuedDate')}</span>
+                <input
+                  type="date"
+                  value={issuedDate}
+                  onChange={(e) => setIssuedDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
+                />
+              </label>
               <button
                 type="submit"
-                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium px-3 py-2 cursor-pointer"
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white text-sm font-medium px-3 py-2 cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
-                {t('addCert')}
+                {certId ? t('saveChanges') : t('addCert')}
               </button>
             </form>
           )}
           <ul className="divide-y divide-slate-200">
             {certs.map((c) => (
               <li key={c.id} className="py-3 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium text-slate-900">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-900 truncate">
                     {c.agency} — {c.level}
                   </p>
                   <p className="text-xs text-slate-500 tabular-telemetry">
@@ -586,32 +721,13 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
                     {c.issued_date ? ` · ${c.issued_date}` : ''}
                   </p>
                 </div>
-                {!isOffline && (
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      aria-label={t('edit')}
-                      onClick={() => {
-                        setCertId(c.id);
-                        setAgency(c.agency);
-                        setLevel(c.level);
-                        setCertNumber(c.cert_number ?? '');
-                        setIssuedDate(c.issued_date ?? '');
-                      }}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-sky-700 hover:bg-sky-50 cursor-pointer"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={t('delete')}
-                      onClick={() => void apiClient.deleteCertification(c.id).then(reloadAll)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
+                {renderRowActions('certs', c.id, () => {
+                  setCertId(c.id);
+                  setAgency(c.agency);
+                  setLevel(c.level);
+                  setCertNumber(c.cert_number ?? '');
+                  setIssuedDate(c.issued_date ?? '');
+                })}
               </li>
             ))}
           </ul>

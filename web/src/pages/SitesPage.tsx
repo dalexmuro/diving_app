@@ -52,7 +52,15 @@ export function SitesPage({ isOffline }: SitesPageProps) {
     mapRef.current = map;
     markersLayerRef.current = layerGroup;
 
+    // Recalculate Leaflet tile bounds cleanly on Android orientation/foldable resize
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => map.invalidateSize());
+      ro.observe(mapContainerRef.current);
+    }
+
     return () => {
+      ro?.disconnect();
       map.remove();
       mapRef.current = null;
       markersLayerRef.current = null;
@@ -124,7 +132,10 @@ export function SitesPage({ isOffline }: SitesPageProps) {
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-900">{t('siteMap')}</h2>
           </div>
-          <div ref={mapContainerRef} className="w-full h-72 rounded-lg overflow-hidden z-0" />
+          <div
+            ref={mapContainerRef}
+            className="w-full h-[clamp(220px,42dvh,420px)] rounded-lg overflow-hidden z-0"
+          />
 
           <form
             onSubmit={(e) => void handleSaveSite(e)}

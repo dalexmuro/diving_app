@@ -16,8 +16,11 @@ const DB_VERSION = 1;
 const STORE_KV = 'kv';
 const STORE_DIVE_DETAILS = 'diveDetails';
 
+let dbPromise: Promise<IDBDatabase> | null = null;
+
 function openCacheDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
@@ -28,9 +31,23 @@ function openCacheDb(): Promise<IDBDatabase> {
         db.createObjectStore(STORE_DIVE_DETAILS, { keyPath: 'id' });
       }
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      const db = req.result;
+      db.onversionchange = () => {
+        db.close();
+        dbPromise = null;
+      };
+      db.onclose = () => {
+        dbPromise = null;
+      };
+      resolve(db);
+    };
+    req.onerror = () => {
+      dbPromise = null;
+      reject(req.error);
+    };
   });
+  return dbPromise;
 }
 
 async function kvGet<T>(key: string): Promise<T | null> {
