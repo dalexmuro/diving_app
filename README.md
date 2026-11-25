@@ -106,7 +106,7 @@ This repository enforces strict security and quality gates before any code reach
 | **Stage 4** | Backend API, D1 schema, R2 archival, Suunto `.fit` parser & Cloud API sync | Completed |
 | **Stage 5** | Web PWA (ES/FR, interactive dive chart, dashboard, offline cache, Android installable) | Completed |
 | **Stage 6** | Unified Workers Static Assets deployment, CI/CD & Definition of Done | Completed |
-| **Stage 7** | Logbook v2 (Paliers, smart auto-saved catalogs, location search, draft FIT & unsaved guard) | In Progress (`STEP-09` ready) |
+| **Stage 7** | Logbook v2 (Paliers, smart auto-saved catalogs, location search, draft FIT, DM5 chart & unsaved guard) | Completed |
 
 ---
 

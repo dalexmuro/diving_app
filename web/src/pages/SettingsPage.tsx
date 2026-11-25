@@ -1,5 +1,5 @@
-import { Check, Fingerprint, Link2, RefreshCw, Upload } from 'lucide-react';
-import { type ChangeEvent, useEffect, useState } from 'react';
+import { Check, Fingerprint, Link2, RefreshCw } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { usePreferences } from '../i18n/I18nContext';
 import { apiClient } from '../services/api';
 import { type Language, type UnitSystem } from '../types/domain';
@@ -7,15 +7,13 @@ import { type Language, type UnitSystem } from '../types/domain';
 interface SettingsPageProps {
   isOffline: boolean;
   onDataChanged: () => Promise<void>;
-  onOpenDive: (diveId: string) => void;
 }
 
-export function SettingsPage({ isOffline, onDataChanged, onOpenDive }: SettingsPageProps) {
+export function SettingsPage({ isOffline, onDataChanged }: SettingsPageProps) {
   const { language, unitSystem, ascentLimitMMin, t, setPreferences } = usePreferences();
   const [limitInput, setLimitInput] = useState(String(ascentLimitMMin));
   const [suuntoConnected, setSuuntoConnected] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [passkeyDone, setPasskeyDone] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
@@ -42,23 +40,6 @@ export function SettingsPage({ isOffline, onDataChanged, onOpenDive }: SettingsP
       setStatusMessage(err instanceof Error ? err.message : 'Sync failed');
     } finally {
       setSyncing(false);
-    }
-  }
-
-  async function handleFitUpload(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    setStatusMessage(null);
-    try {
-      const res = await apiClient.uploadFitFile(file);
-      await onDataChanged();
-      onOpenDive(res.dive.id);
-    } catch (err) {
-      setStatusMessage(err instanceof Error ? err.message : 'FIT upload failed');
-    } finally {
-      setUploading(false);
-      e.target.value = '';
     }
   }
 
@@ -133,7 +114,7 @@ export function SettingsPage({ isOffline, onDataChanged, onOpenDive }: SettingsP
         </label>
       </div>
 
-      {/* Suunto Cloud Sync, Manual .FIT Upload & Android Biometric Passkey */}
+      {/* Suunto Cloud Sync & Android Biometric Passkey (no .fit upload here per #9) */}
       {!isOffline && (
         <div className="panel-surface p-5 space-y-4">
           <div className="flex flex-wrap items-center gap-3">
@@ -154,18 +135,6 @@ export function SettingsPage({ isOffline, onDataChanged, onOpenDive }: SettingsP
               <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
               {syncing ? t('syncing') : t('syncNow')}
             </button>
-
-            <label className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-sm font-medium px-4 py-2 transition-colors cursor-pointer">
-              <Upload className="w-4 h-4 text-sky-600" />
-              <span>{uploading ? '...' : t('importFit')}</span>
-              <input
-                type="file"
-                accept=".fit"
-                disabled={uploading}
-                onChange={(e) => void handleFitUpload(e)}
-                className="hidden"
-              />
-            </label>
           </div>
 
           <div className="pt-3 border-t border-slate-200">

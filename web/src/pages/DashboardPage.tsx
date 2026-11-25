@@ -1,20 +1,22 @@
-import { ArrowRight, Upload } from 'lucide-react';
+import { ArrowRight, Plus } from 'lucide-react';
 import { usePreferences } from '../i18n/I18nContext';
 import { formatDepth, formatDuration, formatSac, formatTemp } from '../services/units';
-import { type AppView, type DiveSummary, type GlobalStats } from '../types/domain';
+import { type DiveSummary, type GlobalStats } from '../types/domain';
 
 interface DashboardPageProps {
   stats: GlobalStats | null;
   dives: DiveSummary[];
+  isOffline: boolean;
   onSelectDive: (diveId: string) => void;
-  onNavigate: (view: AppView) => void;
+  onStartNewDive: () => void;
 }
 
 export function DashboardPage({
   stats,
   dives,
+  isOffline,
   onSelectDive,
-  onNavigate,
+  onStartNewDive,
 }: DashboardPageProps) {
   const { unitSystem, language, t } = usePreferences();
   const latest = dives[0] ?? null;
@@ -25,14 +27,16 @@ export function DashboardPage({
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
           {t('navDashboard')}
         </h1>
-        <button
-          type="button"
-          onClick={() => onNavigate('settings')}
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-medium px-3 py-2 transition-colors cursor-pointer"
-        >
-          <Upload className="w-3.5 h-3.5 text-sky-600" />
-          {t('importFit')}
-        </button>
+        {!isOffline && (
+          <button
+            type="button"
+            onClick={onStartNewDive}
+            className="inline-flex items-center gap-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium px-3.5 py-2 transition-colors cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            {t('newManualDive')}
+          </button>
+        )}
       </div>
 
       {/* Primary KPI Grid */}

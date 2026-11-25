@@ -47,7 +47,8 @@ export function AppShell({
   ];
 
   const isPrimaryActive = (id: AppView) =>
-    activeView === id || (id === 'logbook' && activeView === 'dive-detail');
+    activeView === id ||
+    (id === 'logbook' && (activeView === 'dive-detail' || activeView === 'new-dive-choice'));
 
   return (
     <div className="min-h-dvh flex flex-col md:flex-row bg-[#f4f7fa] text-slate-900">

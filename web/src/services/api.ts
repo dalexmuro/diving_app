@@ -1,9 +1,13 @@
 import { offlineCache } from '../offline/cacheDb';
 import {
+  type Buddy,
   type Certification,
+  type DiveCenter,
+  type DiveComputer,
   type DiveDetail,
   type DiveSite,
   type DiveSummary,
+  type DraftFitInit,
   type GearItem,
   type GlobalStats,
   type UserSettings,
@@ -42,7 +46,26 @@ async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+export interface GeocodingResult {
+  displayName: string;
+  latitude: number;
+  longitude: number;
+}
+
 export const apiClient = {
+  async searchLocation(query: string): Promise<GeocodingResult[]> {
+    if (!query.trim()) return [];
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(query.trim())}`;
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!res.ok) return [];
+    const rows = (await res.json()) as Array<{ display_name: string; lat: string; lon: string }>;
+    return rows.map((r) => ({
+      displayName: r.display_name,
+      latitude: Number(Number(r.lat).toFixed(5)),
+      longitude: Number(Number(r.lon).toFixed(5)),
+    }));
+  },
+
   async checkSession(): Promise<{ authenticated: boolean; email?: string; hasPasskey?: boolean }> {
     try {
       return await apiJson('/api/auth/me');
@@ -138,6 +161,7 @@ export const apiClient = {
     return true;
   },
 
+  // --- Dives ---
   async fetchDives(): Promise<{ data: DiveSummary[]; offline: boolean }> {
     try {
       const { dives } = await apiJson<{ dives: DiveSummary[] }>('/api/dives');
@@ -160,13 +184,14 @@ export const apiClient = {
     }
   },
 
-  async updateDive(id: string, patch: Record<string, unknown>): Promise<DiveDetail> {
-    const { dive } = await apiJson<{ dive: DiveDetail }>(`/api/dives/${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      body: JSON.stringify(patch),
-    });
-    await offlineCache.setDiveDetail(dive);
-    return dive;
+  async parseFitDraft(file: File): Promise<DraftFitInit> {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await apiJson<{ ok: boolean; parsed: DraftFitInit['parsed']; fitBase64: string }>(
+      '/api/dives/parse-fit',
+      { method: 'POST', body: form },
+    );
+    return { parsed: res.parsed, fitBase64: res.fitBase64 };
   },
 
   async createDive(payload: Record<string, unknown>): Promise<DiveDetail> {
@@ -178,17 +203,21 @@ export const apiClient = {
     return dive;
   },
 
-  async uploadFitFile(file: File): Promise<{ created: boolean; dive: DiveDetail }> {
-    const form = new FormData();
-    form.append('file', file);
-    const res = await apiJson<{ created: boolean; dive: DiveDetail }>('/api/dives/import-fit', {
-      method: 'POST',
-      body: form,
+  async updateDive(id: string, patch: Record<string, unknown>): Promise<DiveDetail> {
+    const { dive } = await apiJson<{ dive: DiveDetail }>(`/api/dives/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
     });
-    await offlineCache.setDiveDetail(res.dive);
-    return res;
+    await offlineCache.setDiveDetail(dive);
+    return dive;
   },
 
+  async deleteDive(id: string): Promise<void> {
+    await apiJson(`/api/dives/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await offlineCache.deleteDiveDetail(id);
+  },
+
+  // --- Stats ---
   async fetchStats(): Promise<{ data: GlobalStats | null; offline: boolean }> {
     try {
       const { stats } = await apiJson<{ stats: GlobalStats }>('/api/stats');
@@ -199,6 +228,7 @@ export const apiClient = {
     }
   },
 
+  // --- Sites ---
   async fetchSites(): Promise<{ data: DiveSite[]; offline: boolean }> {
     try {
       const { sites } = await apiJson<{ sites: DiveSite[] }>('/api/sites');
@@ -219,6 +249,95 @@ export const apiClient = {
     return saved;
   },
 
+  // --- Dive Centers ---
+  async fetchCenters(): Promise<{ data: DiveCenter[]; offline: boolean }> {
+    try {
+      const { centers } = await apiJson<{ centers: DiveCenter[] }>('/api/centers');
+      await offlineCache.setCenters(centers);
+      return { data: centers, offline: false };
+    } catch {
+      return { data: (await offlineCache.getCenters()) ?? [], offline: true };
+    }
+  },
+
+  async saveCenter(center: {
+    id?: string;
+    name: string;
+    location_text?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    notes?: string | null;
+  }): Promise<DiveCenter> {
+    const method = center.id ? 'PATCH' : 'POST';
+    const url = center.id ? `/api/centers/${encodeURIComponent(center.id)}` : '/api/centers';
+    const { center: saved } = await apiJson<{ center: DiveCenter }>(url, {
+      method,
+      body: JSON.stringify(center),
+    });
+    return saved;
+  },
+
+  async deleteCenter(id: string): Promise<void> {
+    await apiJson(`/api/centers/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
+
+  // --- Buddies ---
+  async fetchBuddies(): Promise<{ data: Buddy[]; offline: boolean }> {
+    try {
+      const { buddies } = await apiJson<{ buddies: Buddy[] }>('/api/buddies');
+      await offlineCache.setBuddies(buddies);
+      return { data: buddies, offline: false };
+    } catch {
+      return { data: (await offlineCache.getBuddies()) ?? [], offline: true };
+    }
+  },
+
+  async saveBuddy(buddy: { id?: string; name: string; notes?: string | null }): Promise<Buddy> {
+    const method = buddy.id ? 'PATCH' : 'POST';
+    const url = buddy.id ? `/api/buddies/${encodeURIComponent(buddy.id)}` : '/api/buddies';
+    const { buddy: saved } = await apiJson<{ buddy: Buddy }>(url, {
+      method,
+      body: JSON.stringify(buddy),
+    });
+    return saved;
+  },
+
+  async deleteBuddy(id: string): Promise<void> {
+    await apiJson(`/api/buddies/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
+
+  // --- Dive Computers ---
+  async fetchComputers(): Promise<{ data: DiveComputer[]; offline: boolean }> {
+    try {
+      const { computers } = await apiJson<{ computers: DiveComputer[] }>('/api/computers');
+      await offlineCache.setComputers(computers);
+      return { data: computers, offline: false };
+    } catch {
+      return { data: (await offlineCache.getComputers()) ?? [], offline: true };
+    }
+  },
+
+  async saveComputer(computer: {
+    id?: string;
+    name: string;
+    brand?: string | null;
+    model?: string | null;
+    notes?: string | null;
+  }): Promise<DiveComputer> {
+    const method = computer.id ? 'PATCH' : 'POST';
+    const url = computer.id ? `/api/computers/${encodeURIComponent(computer.id)}` : '/api/computers';
+    const { computer: saved } = await apiJson<{ computer: DiveComputer }>(url, {
+      method,
+      body: JSON.stringify(computer),
+    });
+    return saved;
+  },
+
+  async deleteComputer(id: string): Promise<void> {
+    await apiJson(`/api/computers/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
+
+  // --- Gear (Name, Brand, Model, Notes) ---
   async fetchGear(): Promise<{ data: GearItem[]; offline: boolean }> {
     try {
       const { gear } = await apiJson<{ gear: GearItem[] }>('/api/gear');
@@ -229,14 +348,17 @@ export const apiClient = {
     }
   },
 
-  async addGear(item: {
+  async saveGear(item: {
+    id?: string;
     name: string;
-    category: string;
-    brand_model?: string;
-    notes?: string;
+    brand?: string | null;
+    model?: string | null;
+    notes?: string | null;
   }): Promise<GearItem> {
-    const { item: saved } = await apiJson<{ item: GearItem }>('/api/gear', {
-      method: 'POST',
+    const method = item.id ? 'PATCH' : 'POST';
+    const url = item.id ? `/api/gear/${encodeURIComponent(item.id)}` : '/api/gear';
+    const { item: saved } = await apiJson<{ item: GearItem }>(url, {
+      method,
       body: JSON.stringify(item),
     });
     return saved;
@@ -246,6 +368,7 @@ export const apiClient = {
     await apiJson(`/api/gear/${encodeURIComponent(id)}`, { method: 'DELETE' });
   },
 
+  // --- Certifications ---
   async fetchCertifications(): Promise<{ data: Certification[]; offline: boolean }> {
     try {
       const { certifications } = await apiJson<{ certifications: Certification[] }>(
@@ -258,19 +381,21 @@ export const apiClient = {
     }
   },
 
-  async addCertification(cert: {
+  async saveCertification(cert: {
+    id?: string;
     agency: string;
     level: string;
-    cert_number?: string;
-    issued_date?: string;
+    cert_number?: string | null;
+    issued_date?: string | null;
   }): Promise<Certification> {
-    const { certification } = await apiJson<{ certification: Certification }>(
-      '/api/certifications',
-      {
-        method: 'POST',
-        body: JSON.stringify(cert),
-      },
-    );
+    const method = cert.id ? 'PATCH' : 'POST';
+    const url = cert.id
+      ? `/api/certifications/${encodeURIComponent(cert.id)}`
+      : '/api/certifications';
+    const { certification } = await apiJson<{ certification: Certification }>(url, {
+      method,
+      body: JSON.stringify(cert),
+    });
     return certification;
   },
 
@@ -278,6 +403,7 @@ export const apiClient = {
     await apiJson(`/api/certifications/${encodeURIComponent(id)}`, { method: 'DELETE' });
   },
 
+  // --- Settings & Suunto ---
   async fetchSettings(): Promise<UserSettings> {
     try {
       const { settings } = await apiJson<{ settings: UserSettings }>('/api/settings');

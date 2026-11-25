@@ -1,6 +1,9 @@
-import { ArrowLeft, Check, Save } from 'lucide-react';
+import { ArrowLeft, Check, Plus, Save, Trash2 } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { DiveProfileChart } from '../charts/DiveProfileChart';
+import { LocationPicker } from '../components/LocationPicker';
+import { SmartMultiSelect } from '../components/SmartMultiSelect';
+import { SmartSelect } from '../components/SmartSelect';
 import { usePreferences } from '../i18n/I18nContext';
 import { apiClient } from '../services/api';
 import {
@@ -11,50 +14,164 @@ import {
   formatTemp,
 } from '../services/units';
 import {
+  type Buddy,
+  type DecoStop,
+  type DiveCenter,
+  type DiveComputer,
   type DiveDetail,
+  type DraftFitInit,
   type GasType,
+  type GearItem,
   type RatingScale,
   type TankMaterial,
+  type TelemetrySample,
   type WaterType,
 } from '../types/domain';
 
 interface DiveDetailPageProps {
-  diveId: string;
+  diveId: string | null; // null = new unsaved draft
+  draftFit?: DraftFitInit | null;
   isOffline: boolean;
-  onBack: () => void;
-  onSaved: () => Promise<void>;
+  onDirtyChange: (dirty: boolean, saveHandler: (() => Promise<boolean>) | null) => void;
+  onRequestBack: () => void;
+  onSaved: (savedDiveId: string) => Promise<void>;
+  onDeleted: () => Promise<void>;
 }
 
-export function DiveDetailPage({ diveId, isOffline, onBack, onSaved }: DiveDetailPageProps) {
+function isoToDateInput(iso: string | null | undefined): string {
+  if (!iso) return new Date().toISOString().slice(0, 10);
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return new Date().toISOString().slice(0, 10);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function isoToTimeInput(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function combineDateTimeToIso(dateStr: string, timeStr: string): string {
+  const safeDate = dateStr || new Date().toISOString().slice(0, 10);
+  const safeTime = timeStr || '10:00';
+  const d = new Date(`${safeDate}T${safeTime}:00`);
+  return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+}
+
+export function DiveDetailPage({
+  diveId,
+  draftFit,
+  isOffline,
+  onDirtyChange,
+  onRequestBack,
+  onSaved,
+  onDeleted,
+}: DiveDetailPageProps) {
   const { unitSystem, t } = usePreferences();
+  const isNewDraft = diveId === null;
+
   const [dive, setDive] = useState<DiveDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [samples, setSamples] = useState<TelemetrySample[]>([]);
+  const [loading, setLoading] = useState(!isNewDraft);
   const [saving, setSaving] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
+  const [dirty, setDirty] = useState(isNewDraft);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
-  // Editable state
-  const [siteName, setSiteName] = useState('');
-  const [computerName, setComputerName] = useState('');
+  // Catalogs for SmartSelect / SmartMultiSelect
+  const [centers, setCenters] = useState<DiveCenter[]>([]);
+  const [buddiesCatalog, setBuddiesCatalog] = useState<Buddy[]>([]);
+  const [computersCatalog, setComputersCatalog] = useState<DiveComputer[]>([]);
+  const [gearCatalog, setGearCatalog] = useState<GearItem[]>([]);
+
+  // Core editable telemetry & date/time fields
+  const [diveDate, setDiveDate] = useState(() => isoToDateInput(draftFit?.parsed.startedAt));
+  const [startTime, setStartTime] = useState(() =>
+    isoToTimeInput(draftFit?.parsed.startedAt) || '10:00',
+  );
+  const [endTime, setEndTime] = useState(() => isoToTimeInput(draftFit?.parsed.endedAt));
+  const [durationMin, setDurationMin] = useState(() =>
+    draftFit ? String(Math.round(draftFit.parsed.durationS / 60)) : '',
+  );
+  const [maxDepthM, setMaxDepthM] = useState(() =>
+    draftFit ? String(draftFit.parsed.maxDepthM) : '',
+  );
+  const [avgDepthM, setAvgDepthM] = useState(() =>
+    draftFit?.parsed.avgDepthM != null ? String(draftFit.parsed.avgDepthM) : '',
+  );
+  const [minTempC, setMinTempC] = useState(() =>
+    draftFit?.parsed.minTempC != null ? String(draftFit.parsed.minTempC) : '',
+  );
+  const [avgTempC, setAvgTempC] = useState(() =>
+    draftFit?.parsed.avgTempC != null ? String(draftFit.parsed.avgTempC) : '',
+  );
+
+  // Site & Center + GPS Locations
+  const [siteName, setSiteName] = useState(() => draftFit?.parsed.siteDescription ?? '');
+  const [siteLat, setSiteLat] = useState('');
+  const [siteLng, setSiteLng] = useState('');
+  const [diveCenter, setDiveCenter] = useState('');
+  const [centerLocation, setCenterLocation] = useState('');
+  const [centerLat, setCenterLat] = useState('');
+  const [centerLng, setCenterLng] = useState('');
+
+  // Equipment, Computer, Buddies, Gases, Paliers
+  const [computerName, setComputerName] = useState(() => draftFit?.parsed.computerName ?? '');
+  const [buddies, setBuddies] = useState<string[]>([]);
+  const [gearUsed, setGearUsed] = useState<string[]>([]);
+  const [decoStops, setDecoStops] = useState<DecoStop[]>([]);
+  const [newStopDepth, setNewStopDepth] = useState('3');
+  const [newStopMin, setNewStopMin] = useState('3');
+
   const [waterType, setWaterType] = useState<WaterType | ''>('');
-  const [gasType, setGasType] = useState<GasType>('air');
-  const [o2Pct, setO2Pct] = useState('21');
-  const [hePct, setHePct] = useState('0');
-  const [startPressure, setStartPressure] = useState('');
-  const [endPressure, setEndPressure] = useState('');
+  const [gasType, setGasType] = useState<GasType>(() => draftFit?.parsed.gasType ?? 'air');
+  const [o2Pct, setO2Pct] = useState(() => String(draftFit?.parsed.o2Pct ?? 21));
+  const [hePct, setHePct] = useState(() => String(draftFit?.parsed.hePct ?? 0));
+  const [startPressure, setStartPressure] = useState(() =>
+    draftFit?.parsed.startPressureBar != null ? String(draftFit.parsed.startPressureBar) : '',
+  );
+  const [endPressure, setEndPressure] = useState(() =>
+    draftFit?.parsed.endPressureBar != null ? String(draftFit.parsed.endPressureBar) : '',
+  );
   const [tankVolume, setTankVolume] = useState('');
   const [tankMaterial, setTankMaterial] = useState<TankMaterial | ''>('');
   const [ballast, setBallast] = useState('');
-  const [deco, setDeco] = useState(false);
-  const [decoMinutes, setDecoMinutes] = useState('0');
   const [visibility, setVisibility] = useState<RatingScale | ''>('');
   const [buoyancy, setBuoyancy] = useState<RatingScale | ''>('');
   const [feeling, setFeeling] = useState<RatingScale | ''>('');
-  const [buddy, setBuddy] = useState('');
-  const [diveCenter, setDiveCenter] = useState('');
   const [tags, setTags] = useState('');
   const [notes, setNotes] = useState('');
 
+  const markDirty = () => setDirty(true);
+
+  // Load catalogs
   useEffect(() => {
+    void Promise.all([
+      apiClient.fetchCenters(),
+      apiClient.fetchBuddies(),
+      apiClient.fetchComputers(),
+      apiClient.fetchGear(),
+    ]).then(([c, b, comp, g]) => {
+      setCenters(c.data);
+      setBuddiesCatalog(b.data);
+      setComputersCatalog(comp.data);
+      setGearCatalog(g.data);
+    });
+  }, []);
+
+  // Load existing dive or initialize draft FIT samples
+  useEffect(() => {
+    if (isNewDraft) {
+      setSamples(draftFit?.parsed.samples ?? []);
+      setLoading(false);
+      setDirty(true);
+      return;
+    }
+
     let active = true;
     setLoading(true);
     void apiClient.fetchDiveDetail(diveId).then(({ data }) => {
@@ -63,7 +180,22 @@ export function DiveDetailPage({ diveId, isOffline, onBack, onSaved }: DiveDetai
         return;
       }
       setDive(data);
+      setSamples(data.samples);
+      setDiveDate(isoToDateInput(data.started_at));
+      setStartTime(isoToTimeInput(data.started_at));
+      setEndTime(isoToTimeInput(data.ended_at));
+      setDurationMin(data.duration_s ? String(Math.round(data.duration_s / 60)) : '');
+      setMaxDepthM(String(data.max_depth_m));
+      setAvgDepthM(data.avg_depth_m != null ? String(data.avg_depth_m) : '');
+      setMinTempC(data.min_temp_c != null ? String(data.min_temp_c) : '');
+      setAvgTempC(data.avg_temp_c != null ? String(data.avg_temp_c) : '');
       setSiteName(data.site_name ?? '');
+      setSiteLat(data.site_latitude != null ? String(data.site_latitude) : '');
+      setSiteLng(data.site_longitude != null ? String(data.site_longitude) : '');
+      setDiveCenter(data.dive_center ?? '');
+      setCenterLocation(data.dive_center_location ?? '');
+      setCenterLat(data.dive_center_lat != null ? String(data.dive_center_lat) : '');
+      setCenterLng(data.dive_center_lng != null ? String(data.dive_center_lng) : '');
       setComputerName(data.computer_name ?? '');
       setWaterType(data.water_type ?? '');
       setGasType(data.gas_type);
@@ -74,26 +206,161 @@ export function DiveDetailPage({ diveId, isOffline, onBack, onSaved }: DiveDetai
       setTankVolume(data.tank_volume_l != null ? String(data.tank_volume_l) : '');
       setTankMaterial(data.tank_material ?? '');
       setBallast(data.ballast_kg != null ? String(data.ballast_kg) : '');
-      setDeco(data.deco === 1);
-      setDecoMinutes(String(Math.round((data.deco_time_s ?? 0) / 60)));
       setVisibility(data.visibility ?? '');
       setBuoyancy(data.buoyancy ?? '');
       setFeeling(data.feeling ?? '');
-      setBuddy(data.buddy ?? '');
-      setDiveCenter(data.dive_center ?? '');
+      setNotes(data.notes ?? '');
+
       try {
-        const parsedTags = JSON.parse(data.tags_json || '[]') as string[];
-        setTags(parsedTags.join(', '));
+        setTags((JSON.parse(data.tags_json || '[]') as string[]).join(', '));
       } catch {
         setTags('');
       }
-      setNotes(data.notes ?? '');
+      try {
+        const parsedBuddies = JSON.parse(data.buddies_json || '[]') as string[];
+        setBuddies(
+          parsedBuddies.length > 0
+            ? parsedBuddies
+            : data.buddy
+              ? data.buddy
+                  .split(',')
+                  .map((s) => s.trim())
+                  .filter(Boolean)
+              : [],
+        );
+      } catch {
+        setBuddies([]);
+      }
+      try {
+        setGearUsed(JSON.parse(data.gear_used_json || '[]') as string[]);
+      } catch {
+        setGearUsed([]);
+      }
+      try {
+        const parsedStops = JSON.parse(data.deco_stops_json || '[]') as DecoStop[];
+        setDecoStops(parsedStops);
+      } catch {
+        setDecoStops([]);
+      }
+
+      setDirty(false);
       setLoading(false);
     });
     return () => {
       active = false;
     };
-  }, [diveId]);
+  }, [diveId, isNewDraft, draftFit]);
+
+  async function persistDive(): Promise<boolean> {
+    if (isOffline) return false;
+    setSaving(true);
+    setSavedToast(false);
+    try {
+      const startedIso = combineDateTimeToIso(diveDate, startTime);
+      const durationSec = Math.max(0, Math.round((Number(durationMin) || 0) * 60));
+      const endedIso = endTime
+        ? combineDateTimeToIso(diveDate, endTime)
+        : durationSec > 0
+          ? new Date(new Date(startedIso).getTime() + durationSec * 1000).toISOString()
+          : null;
+
+      const payload: Record<string, unknown> = {
+        started_at: startedIso,
+        ended_at: endedIso,
+        duration_s: durationSec,
+        max_depth_m: Number(maxDepthM) || 0,
+        avg_depth_m: avgDepthM ? Number(avgDepthM) : null,
+        min_temp_c: minTempC ? Number(minTempC) : null,
+        avg_temp_c: avgTempC ? Number(avgTempC) : null,
+        site_name: siteName.trim() || undefined,
+        site_latitude: siteLat ? Number(siteLat) : null,
+        site_longitude: siteLng ? Number(siteLng) : null,
+        dive_center: diveCenter.trim() || null,
+        dive_center_location: centerLocation.trim() || null,
+        dive_center_lat: centerLat ? Number(centerLat) : null,
+        dive_center_lng: centerLng ? Number(centerLng) : null,
+        computer_name: computerName.trim() || null,
+        buddies,
+        gear_used: gearUsed,
+        deco_stops: decoStops,
+        water_type: waterType || null,
+        gas_type: gasType,
+        o2_pct: Number(o2Pct) || 21,
+        he_pct: Number(hePct) || 0,
+        start_pressure_bar: startPressure ? Number(startPressure) : null,
+        end_pressure_bar: endPressure ? Number(endPressure) : null,
+        tank_volume_l: tankVolume ? Number(tankVolume) : null,
+        tank_material: tankMaterial || null,
+        ballast_kg: ballast ? Number(ballast) : null,
+        visibility: visibility || null,
+        buoyancy: buoyancy || null,
+        feeling: feeling || null,
+        tags: tags
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+        notes: notes.trim() || null,
+      };
+
+      let savedDive: DiveDetail;
+      if (isNewDraft) {
+        if (draftFit) {
+          payload.samples = draftFit.parsed.samples;
+          payload.fit_hash = draftFit.parsed.fitHash;
+          payload.fit_base64 = draftFit.fitBase64;
+          payload.gf_low = draftFit.parsed.gfLow;
+          payload.gf_high = draftFit.parsed.gfHigh;
+          payload.dive_number_in_series = draftFit.parsed.diveNumberInSeries;
+          payload.surface_time_s = draftFit.parsed.surfaceTimeS;
+        }
+        savedDive = await apiClient.createDive(payload);
+      } else {
+        savedDive = await apiClient.updateDive(diveId, payload);
+      }
+
+      setDive(savedDive);
+      setDirty(false);
+      await onSaved(savedDive.id);
+      setSavedToast(true);
+      setTimeout(() => setSavedToast(false), 2500);
+      return true;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Expose dirty status & save handler to App-level navigation guard
+  useEffect(() => {
+    onDirtyChange(dirty, dirty ? persistDive : null);
+    return () => onDirtyChange(false, null);
+  });
+
+  function handleCenterSelect(val: string) {
+    setDiveCenter(val);
+    markDirty();
+    const matched = centers.find((c) => c.name.toLowerCase() === val.trim().toLowerCase());
+    if (matched) {
+      if (matched.location_text) setCenterLocation(matched.location_text);
+      if (matched.latitude != null) setCenterLat(String(matched.latitude));
+      if (matched.longitude != null) setCenterLng(String(matched.longitude));
+    }
+  }
+
+  function addDecoStop() {
+    const d = Number(newStopDepth);
+    const m = Number(newStopMin);
+    if (!Number.isFinite(d) || d <= 0 || !Number.isFinite(m) || m <= 0) return;
+    setDecoStops((prev) => [...prev, { depth_m: d, duration_min: m }]);
+    markDirty();
+  }
+
+  async function handleConfirmDelete() {
+    if (!diveId || isOffline) return;
+    await apiClient.deleteDive(diveId);
+    setDirty(false);
+    setConfirmDeleteOpen(false);
+    await onDeleted();
+  }
 
   if (loading) {
     return (
@@ -104,65 +371,11 @@ export function DiveDetailPage({ diveId, isOffline, onBack, onSaved }: DiveDetai
     );
   }
 
-  if (!dive) {
-    return (
-      <div className="panel-surface p-6 space-y-4">
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex items-center gap-2 text-sm font-medium text-sky-700 hover:underline cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          {t('backToLogbook')}
-        </button>
-      </div>
-    );
-  }
-
   const pStartNum = startPressure ? Number(startPressure) : null;
   const pEndNum = endPressure ? Number(endPressure) : null;
   const usedPressureBar =
     pStartNum != null && pEndNum != null && pStartNum >= pEndNum ? pStartNum - pEndNum : null;
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    if (isOffline || !dive) return;
-    setSaving(true);
-    setSavedToast(false);
-    try {
-      const updated = await apiClient.updateDive(dive.id, {
-        site_name: siteName.trim() || undefined,
-        computer_name: computerName.trim() || null,
-        water_type: waterType || null,
-        gas_type: gasType,
-        o2_pct: Number(o2Pct) || 21,
-        he_pct: Number(hePct) || 0,
-        start_pressure_bar: startPressure ? Number(startPressure) : null,
-        end_pressure_bar: endPressure ? Number(endPressure) : null,
-        tank_volume_l: tankVolume ? Number(tankVolume) : null,
-        tank_material: tankMaterial || null,
-        ballast_kg: ballast ? Number(ballast) : null,
-        deco: deco ? 1 : 0,
-        deco_time_s: deco ? Math.max(0, Math.round(Number(decoMinutes) * 60)) : 0,
-        visibility: visibility || null,
-        buoyancy: buoyancy || null,
-        feeling: feeling || null,
-        buddy: buddy.trim() || null,
-        dive_center: diveCenter.trim() || null,
-        tags: tags
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean),
-        notes: notes.trim() || null,
-      });
-      setDive(updated);
-      await onSaved();
-      setSavedToast(true);
-      setTimeout(() => setSavedToast(false), 2500);
-    } finally {
-      setSaving(false);
-    }
-  }
+  const currentDurationS = Math.max(0, Math.round((Number(durationMin) || 0) * 60));
 
   const ratingOptions: Array<{ value: RatingScale; label: string }> = [
     { value: 'poor', label: t('ratingPoor') },
@@ -176,42 +389,52 @@ export function DiveDetailPage({ diveId, isOffline, onBack, onSaved }: DiveDetai
       <div className="flex flex-wrap items-center justify-between gap-3">
         <button
           type="button"
-          onClick={onBack}
+          onClick={onRequestBack}
           className="inline-flex items-center gap-2 text-sm font-medium text-slate-700 hover:text-slate-900 cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
           {t('backToLogbook')}
         </button>
-        <span className="text-xs text-slate-500 tabular-telemetry">
-          {new Date(dive.started_at).toLocaleString()}
-          {dive.ended_at ? ` → ${new Date(dive.ended_at).toLocaleTimeString()}` : ''}
-        </span>
+
+        {!isNewDraft && !isOffline && (
+          <button
+            type="button"
+            onClick={() => setConfirmDeleteOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-medium px-3 py-1.5 transition-colors cursor-pointer"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            {t('deleteDive')}
+          </button>
+        )}
       </div>
 
-      {/* Telemetry Summary Strip */}
+      {/* Live Telemetry Summary Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <div className="panel-surface p-3.5">
           <p className="text-xs text-slate-500">{t('maxDepth')}</p>
           <p className="text-lg font-semibold tabular-telemetry text-slate-900">
-            {formatDepth(dive.max_depth_m, unitSystem)}
+            {formatDepth(maxDepthM ? Number(maxDepthM) : null, unitSystem)}
           </p>
         </div>
         <div className="panel-surface p-3.5">
           <p className="text-xs text-slate-500">{t('avgDepth')}</p>
           <p className="text-lg font-semibold tabular-telemetry text-slate-900">
-            {formatDepth(dive.avg_depth_m, unitSystem)}
+            {formatDepth(avgDepthM ? Number(avgDepthM) : null, unitSystem)}
           </p>
         </div>
         <div className="panel-surface p-3.5">
           <p className="text-xs text-slate-500">{t('underwaterTime')}</p>
           <p className="text-lg font-semibold tabular-telemetry text-slate-900">
-            {formatDuration(dive.duration_s)}
+            {formatDuration(currentDurationS)}
           </p>
         </div>
         <div className="panel-surface p-3.5">
           <p className="text-xs text-slate-500">{t('waterTemp')}</p>
           <p className="text-lg font-semibold tabular-telemetry text-slate-900">
-            {formatTemp(dive.avg_temp_c ?? dive.min_temp_c, unitSystem)}
+            {formatTemp(
+              avgTempC ? Number(avgTempC) : minTempC ? Number(minTempC) : null,
+              unitSystem,
+            )}
           </p>
         </div>
         <div className="panel-surface p-3.5">
@@ -223,92 +446,344 @@ export function DiveDetailPage({ diveId, isOffline, onBack, onSaved }: DiveDetai
         <div className="panel-surface p-3.5">
           <p className="text-xs text-slate-500">{t('avgSac')}</p>
           <p className="text-lg font-semibold tabular-telemetry text-slate-900">
-            {formatSac(dive.sac_l_min, unitSystem)}
+            {formatSac(dive?.sac_l_min ?? null, unitSystem)}
           </p>
         </div>
       </div>
 
-      {/* Interactive Dive Profile Curve */}
+      {/* Interactive Suunto DM5-Style Dive Profile */}
       <DiveProfileChart
-        samples={dive.samples}
+        samples={samples}
+        totalDurationS={currentDurationS || undefined}
         startPressureBar={pStartNum}
         endPressureBar={pEndNum}
+        decoStops={decoStops}
       />
 
-      {/* Complete Editable Logbook Form */}
-      <form onSubmit={(e) => void handleSubmit(e)} className="panel-surface p-5 space-y-5">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* Complete Editable Dive Form */}
+      <form
+        onSubmit={(e: FormEvent) => {
+          e.preventDefault();
+          void persistDive();
+        }}
+        className="panel-surface p-5 space-y-6"
+      >
+        {/* Row 1: Date, Start/End Time, Duration, Depths & Temps (ALL editable!) */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('siteName')}</span>
+            <span>{t('dateLabel')}</span>
             <input
-              type="text"
-              value={siteName}
-              onChange={(e) => setSiteName(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
+              type="date"
+              required
+              value={diveDate}
+              onChange={(e) => {
+                setDiveDate(e.target.value);
+                markDirty();
+              }}
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
+            />
+          </label>
+          <label className="space-y-1 text-xs font-medium text-slate-700">
+            <span>{t('startTimeLabel')}</span>
+            <input
+              type="time"
+              value={startTime}
+              onChange={(e) => {
+                setStartTime(e.target.value);
+                markDirty();
+              }}
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
+            />
+          </label>
+          <label className="space-y-1 text-xs font-medium text-slate-700">
+            <span>{t('endTimeLabel')}</span>
+            <input
+              type="time"
+              value={endTime}
+              onChange={(e) => {
+                setEndTime(e.target.value);
+                markDirty();
+              }}
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
+            />
+          </label>
+          <label className="space-y-1 text-xs font-medium text-slate-700">
+            <span>{t('durationMin')}</span>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              required
+              value={durationMin}
+              onChange={(e) => {
+                setDurationMin(e.target.value);
+                markDirty();
+              }}
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
             />
           </label>
 
           <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('computerUsed')}</span>
+            <span>{t('maxDepth')} (m)</span>
             <input
-              type="text"
-              value={computerName}
-              onChange={(e) => setComputerName(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
+              type="number"
+              min="0"
+              step="0.1"
+              required
+              value={maxDepthM}
+              onChange={(e) => {
+                setMaxDepthM(e.target.value);
+                markDirty();
+              }}
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
             />
           </label>
-
           <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('waterType')}</span>
-            <select
-              value={waterType}
-              onChange={(e) => setWaterType(e.target.value as WaterType | '')}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+            <span>{t('avgDepth')} (m)</span>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={avgDepthM}
+              onChange={(e) => {
+                setAvgDepthM(e.target.value);
+                markDirty();
+              }}
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
+            />
+          </label>
+          <label className="space-y-1 text-xs font-medium text-slate-700">
+            <span>{t('minTemp')}</span>
+            <input
+              type="number"
+              step="0.5"
+              value={minTempC}
+              onChange={(e) => {
+                setMinTempC(e.target.value);
+                markDirty();
+              }}
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
+            />
+          </label>
+          <label className="space-y-1 text-xs font-medium text-slate-700">
+            <span>{t('avgTemp')}</span>
+            <input
+              type="number"
+              step="0.5"
+              value={avgTempC}
+              onChange={(e) => {
+                setAvgTempC(e.target.value);
+                markDirty();
+              }}
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
+            />
+          </label>
+        </div>
+
+        {/* Row 2: Site & Dive Center + Searchable GPS Locations (#5) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="space-y-2.5">
+            <label className="space-y-1 text-xs font-medium text-slate-700 block">
+              <span>{t('siteName')}</span>
+              <input
+                type="text"
+                value={siteName}
+                onChange={(e) => {
+                  setSiteName(e.target.value);
+                  markDirty();
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
+              />
+            </label>
+            <LocationPicker
+              label={t('siteLocation')}
+              latitude={siteLat}
+              longitude={siteLng}
+              isOffline={isOffline}
+              onChange={(patch) => {
+                if (patch.latitude !== undefined) setSiteLat(patch.latitude);
+                if (patch.longitude !== undefined) setSiteLng(patch.longitude);
+                markDirty();
+              }}
+            />
+          </div>
+
+          <div className="space-y-2.5">
+            <SmartSelect
+              label={t('diveCenter')}
+              value={diveCenter}
+              options={centers.map((c) => c.name)}
+              placeholder={t('selectOrType')}
+              onChange={handleCenterSelect}
+            />
+            <LocationPicker
+              label={t('centerLocation')}
+              locationText={centerLocation}
+              latitude={centerLat}
+              longitude={centerLng}
+              isOffline={isOffline}
+              showLocationText
+              onChange={(patch) => {
+                if (patch.locationText !== undefined) setCenterLocation(patch.locationText);
+                if (patch.latitude !== undefined) setCenterLat(patch.latitude);
+                if (patch.longitude !== undefined) setCenterLng(patch.longitude);
+                markDirty();
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Row 3: Computer, Buddies (multi), Suit & Gear (multi) (#2 & #3) */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <SmartSelect
+            label={t('computerUsed')}
+            value={computerName}
+            options={computersCatalog.map((c) => c.name)}
+            placeholder={t('selectOrType')}
+            onChange={(val) => {
+              setComputerName(val);
+              markDirty();
+            }}
+          />
+
+          <SmartMultiSelect
+            label={t('buddy')}
+            values={buddies}
+            options={buddiesCatalog.map((b) => b.name)}
+            placeholder={t('selectOrType')}
+            addLabel={t('addOption')}
+            onChange={(vals) => {
+              setBuddies(vals);
+              markDirty();
+            }}
+          />
+
+          <SmartMultiSelect
+            label={t('gearUsed')}
+            values={gearUsed}
+            options={gearCatalog.map((g) => g.name)}
+            placeholder={t('selectOrType')}
+            addLabel={t('addOption')}
+            onChange={(vals) => {
+              setGearUsed(vals);
+              markDirty();
+            }}
+          />
+        </div>
+
+        {/* Row 4: Paliers / Deco Stops (#1) */}
+        <div className="rounded-lg border border-slate-200 p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-slate-900">{t('decoStopsTitle')}</h3>
+
+          {decoStops.length === 0 ? (
+            <p className="text-xs text-slate-500">{t('noDecoStops')}</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {decoStops.map((stop, idx) => (
+                <span
+                  key={`${stop.depth_m}-${stop.duration_min}-${idx}`}
+                  className="inline-flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-900 tabular-telemetry"
+                >
+                  {formatDepth(stop.depth_m, unitSystem)} · {stop.duration_min} min
+                  <button
+                    type="button"
+                    aria-label={t('delete')}
+                    onClick={() => {
+                      setDecoStops((prev) => prev.filter((_, i) => i !== idx));
+                      markDirty();
+                    }}
+                    className="text-violet-600 hover:text-red-600 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div className="grid grid-cols-3 sm:max-w-md gap-2 items-end">
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('stopDepthM')}</span>
+              <input
+                type="number"
+                min="1"
+                step="0.5"
+                value={newStopDepth}
+                onChange={(e) => setNewStopDepth(e.target.value)}
+                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('stopDurationMin')}</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={newStopMin}
+                onChange={(e) => setNewStopMin(e.target.value)}
+                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={addDecoStop}
+              className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-medium px-3 py-2 cursor-pointer"
             >
-              <option value="">—</option>
-              <option value="salt">{t('waterSalt')}</option>
-              <option value="fresh">{t('waterFresh')}</option>
-            </select>
-          </label>
+              <Plus className="w-3.5 h-3.5 text-violet-600" />
+              <span>{t('addDecoStop')}</span>
+            </button>
+          </div>
+        </div>
 
+        {/* Row 5: Pressures, Tank, Ballast, Water, Gas, Ratings */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
           <label className="space-y-1 text-xs font-medium text-slate-700">
             <span>{t('startPressure')} (bar)</span>
             <input
               type="number"
               step="1"
               value={startPressure}
-              onChange={(e) => setStartPressure(e.target.value)}
+              onChange={(e) => {
+                setStartPressure(e.target.value);
+                markDirty();
+              }}
               className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
             />
           </label>
-
           <label className="space-y-1 text-xs font-medium text-slate-700">
             <span>{t('endPressure')} (bar)</span>
             <input
               type="number"
               step="1"
               value={endPressure}
-              onChange={(e) => setEndPressure(e.target.value)}
+              onChange={(e) => {
+                setEndPressure(e.target.value);
+                markDirty();
+              }}
               className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
             />
           </label>
-
           <label className="space-y-1 text-xs font-medium text-slate-700">
             <span>{t('tankVolume')} (L)</span>
             <input
               type="number"
               step="0.1"
               value={tankVolume}
-              onChange={(e) => setTankVolume(e.target.value)}
+              onChange={(e) => {
+                setTankVolume(e.target.value);
+                markDirty();
+              }}
               className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
             />
           </label>
-
           <label className="space-y-1 text-xs font-medium text-slate-700">
             <span>{t('tankMaterial')}</span>
             <select
               value={tankMaterial}
-              onChange={(e) => setTankMaterial(e.target.value as TankMaterial | '')}
+              onChange={(e) => {
+                setTankMaterial(e.target.value as TankMaterial | '');
+                markDirty();
+              }}
               className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
             >
               <option value="">—</option>
@@ -317,24 +792,44 @@ export function DiveDetailPage({ diveId, isOffline, onBack, onSaved }: DiveDetai
               <option value="composite">{t('tankComposite')}</option>
             </select>
           </label>
-
           <label className="space-y-1 text-xs font-medium text-slate-700">
             <span>{t('ballast')} (kg)</span>
             <input
               type="number"
               step="0.5"
               value={ballast}
-              onChange={(e) => setBallast(e.target.value)}
+              onChange={(e) => {
+                setBallast(e.target.value);
+                markDirty();
+              }}
               className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
             />
           </label>
+          <label className="space-y-1 text-xs font-medium text-slate-700">
+            <span>{t('waterType')}</span>
+            <select
+              value={waterType}
+              onChange={(e) => {
+                setWaterType(e.target.value as WaterType | '');
+                markDirty();
+              }}
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+            >
+              <option value="">—</option>
+              <option value="salt">{t('waterSalt')}</option>
+              <option value="fresh">{t('waterFresh')}</option>
+            </select>
+          </label>
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 gap-1.5 col-span-2">
             <label className="space-y-1 text-xs font-medium text-slate-700">
               <span>Gas</span>
               <select
                 value={gasType}
-                onChange={(e) => setGasType(e.target.value as GasType)}
+                onChange={(e) => {
+                  setGasType(e.target.value as GasType);
+                  markDirty();
+                }}
                 className="w-full px-2 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
               >
                 <option value="air">{t('gasAir')}</option>
@@ -349,7 +844,10 @@ export function DiveDetailPage({ diveId, isOffline, onBack, onSaved }: DiveDetai
                 min="10"
                 max="100"
                 value={o2Pct}
-                onChange={(e) => setO2Pct(e.target.value)}
+                onChange={(e) => {
+                  setO2Pct(e.target.value);
+                  markDirty();
+                }}
                 className="w-full px-2 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry"
               />
             </label>
@@ -360,41 +858,23 @@ export function DiveDetailPage({ diveId, isOffline, onBack, onSaved }: DiveDetai
                 min="0"
                 max="80"
                 value={hePct}
-                onChange={(e) => setHePct(e.target.value)}
+                onChange={(e) => {
+                  setHePct(e.target.value);
+                  markDirty();
+                }}
                 className="w-full px-2 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry"
               />
             </label>
           </div>
 
           <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('decoRequired')}</span>
-            <select
-              value={deco ? '1' : '0'}
-              onChange={(e) => setDeco(e.target.value === '1')}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
-            >
-              <option value="0">{t('no')}</option>
-              <option value="1">{t('yes')}</option>
-            </select>
-          </label>
-
-          <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('decoTime')}</span>
-            <input
-              type="number"
-              min="0"
-              disabled={!deco}
-              value={decoMinutes}
-              onChange={(e) => setDecoMinutes(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry disabled:bg-slate-100"
-            />
-          </label>
-
-          <label className="space-y-1 text-xs font-medium text-slate-700">
             <span>{t('visibility')}</span>
             <select
               value={visibility}
-              onChange={(e) => setVisibility(e.target.value as RatingScale | '')}
+              onChange={(e) => {
+                setVisibility(e.target.value as RatingScale | '');
+                markDirty();
+              }}
               className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
             >
               <option value="">—</option>
@@ -405,12 +885,14 @@ export function DiveDetailPage({ diveId, isOffline, onBack, onSaved }: DiveDetai
               ))}
             </select>
           </label>
-
           <label className="space-y-1 text-xs font-medium text-slate-700">
             <span>{t('buoyancy')}</span>
             <select
               value={buoyancy}
-              onChange={(e) => setBuoyancy(e.target.value as RatingScale | '')}
+              onChange={(e) => {
+                setBuoyancy(e.target.value as RatingScale | '');
+                markDirty();
+              }}
               className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
             >
               <option value="">—</option>
@@ -421,12 +903,14 @@ export function DiveDetailPage({ diveId, isOffline, onBack, onSaved }: DiveDetai
               ))}
             </select>
           </label>
-
           <label className="space-y-1 text-xs font-medium text-slate-700">
             <span>{t('feeling')}</span>
             <select
               value={feeling}
-              onChange={(e) => setFeeling(e.target.value as RatingScale | '')}
+              onChange={(e) => {
+                setFeeling(e.target.value as RatingScale | '');
+                markDirty();
+              }}
               className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
             >
               <option value="">—</option>
@@ -437,33 +921,15 @@ export function DiveDetailPage({ diveId, isOffline, onBack, onSaved }: DiveDetai
               ))}
             </select>
           </label>
-
           <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('buddy')}</span>
-            <input
-              type="text"
-              value={buddy}
-              onChange={(e) => setBuddy(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
-            />
-          </label>
-
-          <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('diveCenter')}</span>
-            <input
-              type="text"
-              value={diveCenter}
-              onChange={(e) => setDiveCenter(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
-            />
-          </label>
-
-          <label className="space-y-1 text-xs font-medium text-slate-700 sm:col-span-2">
             <span>{t('tags')}</span>
             <input
               type="text"
               value={tags}
-              onChange={(e) => setTags(e.target.value)}
+              onChange={(e) => {
+                setTags(e.target.value);
+                markDirty();
+              }}
               className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
             />
           </label>
@@ -474,7 +940,10 @@ export function DiveDetailPage({ diveId, isOffline, onBack, onSaved }: DiveDetai
           <textarea
             rows={3}
             value={notes}
-            onChange={(e) => setNotes(e.target.value)}
+            onChange={(e) => {
+              setNotes(e.target.value);
+              markDirty();
+            }}
             className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
           />
         </label>
@@ -494,10 +963,36 @@ export function DiveDetailPage({ diveId, isOffline, onBack, onSaved }: DiveDetai
             className="inline-flex items-center gap-2 rounded-lg bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 transition-colors cursor-pointer"
           >
             <Save className="w-4 h-4" />
-            {t('saveChanges')}
+            {isNewDraft ? t('saveDive') : t('saveChanges')}
           </button>
         </div>
       </form>
+
+      {/* Delete Confirmation Modal (#6) */}
+      {confirmDeleteOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl border border-slate-200 max-w-sm w-full p-5 space-y-4 shadow-xl">
+            <h2 className="text-base font-semibold text-slate-900">{t('deleteDive')}</h2>
+            <p className="text-sm text-slate-600">{t('confirmDeleteDive')}</p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteOpen(false)}
+                className="rounded-lg border border-slate-300 px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                {t('cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleConfirmDelete()}
+                className="rounded-lg bg-red-600 hover:bg-red-700 px-3.5 py-2 text-xs font-medium text-white cursor-pointer"
+              >
+                {t('delete')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

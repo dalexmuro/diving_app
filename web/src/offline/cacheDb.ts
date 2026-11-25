@@ -1,5 +1,8 @@
 import {
+  type Buddy,
   type Certification,
+  type DiveCenter,
+  type DiveComputer,
   type DiveDetail,
   type DiveSite,
   type DiveSummary,
@@ -60,6 +63,15 @@ export const offlineCache = {
   getSites: () => kvGet<DiveSite[]>('sites'),
   setSites: (sites: DiveSite[]) => kvSet('sites', sites),
 
+  getCenters: () => kvGet<DiveCenter[]>('centers'),
+  setCenters: (centers: DiveCenter[]) => kvSet('centers', centers),
+
+  getBuddies: () => kvGet<Buddy[]>('buddies'),
+  setBuddies: (buddies: Buddy[]) => kvSet('buddies', buddies),
+
+  getComputers: () => kvGet<DiveComputer[]>('computers'),
+  setComputers: (computers: DiveComputer[]) => kvSet('computers', computers),
+
   getGear: () => kvGet<GearItem[]>('gear'),
   setGear: (gear: GearItem[]) => kvSet('gear', gear),
 
@@ -84,6 +96,16 @@ export const offlineCache = {
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_DIVE_DETAILS, 'readwrite');
       tx.objectStore(STORE_DIVE_DETAILS).put(detail);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  },
+
+  async deleteDiveDetail(id: string): Promise<void> {
+    const db = await openCacheDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_DIVE_DETAILS, 'readwrite');
+      tx.objectStore(STORE_DIVE_DETAILS).delete(id);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });

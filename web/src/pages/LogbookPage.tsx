@@ -13,14 +13,14 @@ interface LogbookPageProps {
   dives: DiveSummary[];
   isOffline: boolean;
   onSelectDive: (diveId: string) => void;
-  onCreateManualDive: () => Promise<void>;
+  onStartNewDive: () => void;
 }
 
 export function LogbookPage({
   dives,
   isOffline,
   onSelectDive,
-  onCreateManualDive,
+  onStartNewDive,
 }: LogbookPageProps) {
   const { unitSystem, t, language } = usePreferences();
   const [query, setQuery] = useState('');
@@ -43,7 +43,7 @@ export function LogbookPage({
         {!isOffline && (
           <button
             type="button"
-            onClick={() => void onCreateManualDive()}
+            onClick={onStartNewDive}
             className="inline-flex items-center gap-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-sm font-medium px-3.5 py-2 transition-colors cursor-pointer"
           >
             <Plus className="w-4 h-4" />
