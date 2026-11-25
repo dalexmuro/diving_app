@@ -79,6 +79,7 @@ export interface DiveSummary {
   avg_temp_c: number | null;
   log_number?: number | null;
   dive_mode?: DiveMode | null;
+  dive_types_json?: string;
   water_type: WaterType | null;
   gas_type: GasType;
   o2_pct: number;

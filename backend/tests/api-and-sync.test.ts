@@ -14,7 +14,9 @@ const migrationSql =
   '\n' +
   readFileSync(resolve(here, '../migrations/0002_catalogs_and_paliers.sql'), 'utf8') +
   '\n' +
-  readFileSync(resolve(here, '../migrations/0003_ffessm_fields.sql'), 'utf8');
+  readFileSync(resolve(here, '../migrations/0003_ffessm_fields.sql'), 'utf8') +
+  '\n' +
+  readFileSync(resolve(here, '../migrations/0004_dive_types.sql'), 'utf8');
 
 const DUMMY_ENV: FullBackendEnv = {
   APP_JWT_SECRET: 'dummy_jwt_secret_for_api_tests',

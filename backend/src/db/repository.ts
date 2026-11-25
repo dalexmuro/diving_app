@@ -34,6 +34,7 @@ export interface DiveRecord {
   avg_temp_c: number | null;
   log_number: number | null;
   dive_mode: DiveMode | null;
+  dive_types_json?: string;
   water_type: WaterType | null;
   water_env?: string | null;
   gas_type: GasType;
@@ -179,6 +180,7 @@ const EDITABLE_DIVE_COLUMNS = [
   'avg_temp_c',
   'log_number',
   'dive_mode',
+  'dive_types_json',
   'water_type',
   'water_env',
   'gas_type',
@@ -217,6 +219,7 @@ const EDITABLE_DIVE_COLUMNS = [
 export type EditableDiveField = (typeof EDITABLE_DIVE_COLUMNS)[number];
 export type DivePatch = Partial<Record<EditableDiveField, unknown>> & {
   tags?: string[];
+  dive_types?: string[];
   buddies?: string[];
   gear_used?: string[];
   deco_stops?: DecoStop[];
@@ -634,6 +637,11 @@ export function createD1Repository(db: D1Database) {
       }
       if (Array.isArray(patch.tags)) {
         normalized.tags_json = JSON.stringify(patch.tags);
+      }
+      if (Array.isArray(patch.dive_types)) {
+        normalized.dive_types_json = JSON.stringify(
+          patch.dive_types.map((v) => v.trim()).filter(Boolean),
+        );
       }
       if (Array.isArray(patch.buddies)) {
         const cleanBuddies = patch.buddies.map((b) => b.trim()).filter(Boolean);

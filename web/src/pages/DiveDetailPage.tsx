@@ -163,6 +163,7 @@ export function DiveDetailPage({
   const [ballast, setBallast] = useState('');
   const [logNumber, setLogNumber] = useState('');
   const [diveMode, setDiveMode] = useState<DiveMode | ''>('');
+  const [diveTypes, setDiveTypes] = useState<string[]>([]);
   const [dayPeriod, setDayPeriod] = useState<DayPeriod | ''>('');
   const [seaState, setSeaState] = useState<SeaState | ''>('');
   const [weather, setWeather] = useState<WeatherCondition | ''>('');
@@ -251,6 +252,11 @@ export function DiveDetailPage({
         setTags('');
       }
       try {
+        setDiveTypes(JSON.parse(data.dive_types_json || '[]') as string[]);
+      } catch {
+        setDiveTypes([]);
+      }
+      try {
         const parsedBuddies = JSON.parse(data.buddies_json || '[]') as string[];
         setBuddies(
           parsedBuddies.length > 0
@@ -330,6 +336,7 @@ export function DiveDetailPage({
         ballast_kg: ballast ? Number(ballast) : null,
         log_number: logNumber ? Math.round(Number(logNumber)) : null,
         dive_mode: diveMode || null,
+        dive_types: diveTypes,
         day_period: dayPeriod || null,
         sea_state: seaState || null,
         weather: weather || null,
@@ -485,6 +492,32 @@ export function DiveDetailPage({
     { value: 'good', label: t('ratingGood') },
     { value: 'excellent', label: t('ratingExcellent') },
   ];
+
+  const additionalTypeOptions: Array<{ id: string; label: string }> = [
+    { id: 'cave', label: t('diveTypeCave') },
+    { id: 'wreck', label: t('diveTypeWreck') },
+    { id: 'photo_bio', label: t('diveTypePhotoBio') },
+    { id: 'night', label: t('diveTypeNight') },
+  ];
+
+  const entryType = diveTypes.includes('boat')
+    ? 'boat'
+    : diveTypes.includes('shore')
+      ? 'shore'
+      : '';
+
+  function setEntryType(next: '' | 'shore' | 'boat') {
+    setDiveTypes((prev) => {
+      const withoutEntry = prev.filter((x) => x !== 'shore' && x !== 'boat');
+      return next ? [...withoutEntry, next] : withoutEntry;
+    });
+    markDirty();
+  }
+
+  function toggleDiveType(id: string) {
+    setDiveTypes((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    markDirty();
+  }
 
   return (
     <section className="space-y-6">
@@ -649,8 +682,8 @@ export function DiveDetailPage({
                 className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
               >
                 <option value="">—</option>
-                <option value="autonomous">{t('modeAutonomous')}</option>
                 <option value="guided">{t('modeGuided')}</option>
+                <option value="autonomous">{t('modeAutonomous')}</option>
                 <option value="training">{t('modeTraining')}</option>
               </select>
             </label>
@@ -799,6 +832,46 @@ export function DiveDetailPage({
                 markDirty();
               }}
             />
+          </div>
+
+          {/* Departure (Du bord / En bateau) + Additional Dive Types (Grotte, Épave, Photo/Bio, Nocturne) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-slate-100 items-start">
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('diveEntryTitle')}</span>
+              <select
+                value={entryType}
+                onChange={(e) => setEntryType(e.target.value as '' | 'shore' | 'boat')}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+              >
+                <option value="">—</option>
+                <option value="shore">{t('diveTypeShore')}</option>
+                <option value="boat">{t('diveTypeBoat')}</option>
+              </select>
+            </label>
+
+            <div className="sm:col-span-2 space-y-1.5">
+              <span className="block text-xs font-medium text-slate-700">{t('diveTypesTitle')}</span>
+              <div className="flex flex-wrap gap-2">
+                {additionalTypeOptions.map((opt) => {
+                  const selected = diveTypes.includes(opt.id);
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => toggleDiveType(opt.id)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors cursor-pointer ${
+                        selected
+                          ? 'bg-sky-600 border-sky-600 text-white'
+                          : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 active:bg-slate-100'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
 
