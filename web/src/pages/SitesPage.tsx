@@ -1,6 +1,6 @@
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { MapPin, Plus, Search, X } from 'lucide-react';
+import { MapPin, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { usePreferences } from '../i18n/I18nContext';
 import { type GeocodingResult, apiClient } from '../services/api';
@@ -15,6 +15,7 @@ export function SitesPage({ isOffline }: SitesPageProps) {
   const { unitSystem, t } = usePreferences();
   const [sites, setSites] = useState<DiveSite[]>([]);
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [country, setCountry] = useState('');
   const [lat, setLat] = useState('');
@@ -225,6 +226,16 @@ export function SitesPage({ isOffline }: SitesPageProps) {
     await reloadSites();
   }
 
+  async function handleDeleteSite(id: string) {
+    if (isOffline) return;
+    setConfirmDeleteId(null);
+    await apiClient.deleteSite(id);
+    if (selectedSiteId === id) {
+      resetForm();
+    }
+    await reloadSites();
+  }
+
   return (
     <section className="space-y-6">
       <h1 className="text-[clamp(1.35rem,2.5vw,1.6rem)] font-semibold tracking-tight text-slate-900">
@@ -372,33 +383,77 @@ export function SitesPage({ isOffline }: SitesPageProps) {
           <div className="p-6 text-center text-sm text-slate-600">{t('noDivesYet')}</div>
         ) : (
           sites.map((site) => (
-            <button
+            <div
               key={site.id}
-              type="button"
-              onClick={() => selectForEdit(site)}
-              className="w-full text-left px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between gap-4 cursor-pointer"
+              className="px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between gap-3"
             >
-              <div className="space-y-0.5 min-w-0">
+              <button
+                type="button"
+                onClick={() => selectForEdit(site)}
+                className="flex-1 min-w-0 text-left space-y-0.5 cursor-pointer"
+              >
                 <p className="text-sm font-semibold text-slate-900 truncate">
                   {site.name}
                   {site.country ? ` · ${site.country}` : ''}
                 </p>
                 <p className="text-xs text-slate-500 inline-flex items-center gap-1 tabular-telemetry">
-                  <MapPin className="w-3 h-3 text-sky-600" />
+                  <MapPin className="w-3 h-3 text-sky-600 shrink-0" />
                   {site.latitude != null && site.longitude != null
                     ? `${site.latitude.toFixed(4)}, ${site.longitude.toFixed(4)}`
                     : 'GPS —'}
                 </p>
+              </button>
+
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="text-right">
+                  <p className="text-sm font-semibold text-slate-900 tabular-telemetry">
+                    {site.dive_count ?? 0}
+                  </p>
+                  <p className="text-xs text-slate-500 tabular-telemetry">
+                    {formatDepth(site.max_depth_m ?? null, unitSystem)}
+                  </p>
+                </div>
+
+                {!isOffline &&
+                  (confirmDeleteId === site.id ? (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteId(null)}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+                      >
+                        {t('cancel')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteSite(site.id)}
+                        className="px-2.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-xs font-medium text-white cursor-pointer"
+                      >
+                        {t('delete')}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        aria-label={t('edit')}
+                        onClick={() => selectForEdit(site)}
+                        className="touch-target flex items-center justify-center rounded-lg text-slate-500 hover:text-sky-700 hover:bg-sky-50 active:bg-sky-100 cursor-pointer"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={t('delete')}
+                        onClick={() => setConfirmDeleteId(site.id)}
+                        className="touch-target flex items-center justify-center rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 active:bg-red-100 cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
               </div>
-              <div className="text-right shrink-0">
-                <p className="text-sm font-semibold text-slate-900 tabular-telemetry">
-                  {site.dive_count ?? 0}
-                </p>
-                <p className="text-xs text-slate-500 tabular-telemetry">
-                  {formatDepth(site.max_depth_m ?? null, unitSystem)}
-                </p>
-              </div>
-            </button>
+            </div>
           ))
         )}
       </div>

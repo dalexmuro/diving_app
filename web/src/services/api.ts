@@ -249,6 +249,10 @@ export const apiClient = {
     return saved;
   },
 
+  async deleteSite(id: string): Promise<void> {
+    await apiJson(`/api/sites/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
+
   // --- Dive Centers ---
   async fetchCenters(): Promise<{ data: DiveCenter[]; offline: boolean }> {
     try {
