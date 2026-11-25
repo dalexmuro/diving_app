@@ -105,4 +105,17 @@ This repository enforces strict security and quality gates before any code reach
 | **Stage 3** | English `README.md` & living `TECHNICAL_DOCUMENTATION.md` | Completed |
 | **Stage 4** | Backend API, D1 schema, R2 archival, Suunto `.fit` parser & Cloud API sync | Completed |
 | **Stage 5** | Web PWA (ES/FR, interactive dive chart, dashboard, offline cache, Android installable) | Completed |
-| **Stage 6** | Production deployment (`diving.dalexmuro.com`), CI/CD secrets & E2E verification | Pending |
+| **Stage 6** | Unified Workers Static Assets deployment, CI/CD & Definition of Done | Ready for Production |
+
+---
+
+## Production Deployment Checklist
+
+1. **GitHub Repository Settings (`Settings → Secrets and variables → Actions`):**
+   - Secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (`72a8537e848ff38b562b789901671eec`).
+   - Variable: `CLOUDFLARE_DEPLOY_ENABLED` = `true`.
+2. **Cloudflare Worker Secrets** (set once via `npx wrangler secret put <NAME>` inside `backend/`):
+   - `APP_USER_EMAIL`, `APP_JWT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SUUNTO_CLIENT_ID`, `SUUNTO_CLIENT_SECRET`, `SUUNTO_SUBSCRIPTION_KEY`, `SUUNTO_WEBHOOK_SECRET`.
+3. **Custom Domain (`diving.dalexmuro.com`):**
+   - Attach `diving.dalexmuro.com` under *Cloudflare Dashboard → Workers & Pages → `diving-app-api` → Settings → Domains & Routes* (requires `dalexmuro.com` DNS zone active in Cloudflare, or use the generated `https://diving-app-api.<subdomain>.workers.dev` URL).
+   - Ensure Google OAuth and Suunto API Zone redirect/webhook URIs match your active origin (`/api/auth/google/callback`, `/api/suunto/callback`, `/api/webhooks/suunto`).
