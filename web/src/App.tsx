@@ -471,7 +471,9 @@ export function App() {
             />
           )}
           {activeView === 'statistics' && <StatsPage stats={stats} />}
-          {activeView === 'sites' && <SitesPage isOffline={isOffline} />}
+          {activeView === 'sites' && (
+            <SitesPage isOffline={isOffline} dives={dives} onSelectDive={openDiveDetail} />
+          )}
           {activeView === 'gear-certs' && <GearCertsPage isOffline={isOffline} />}
           {activeView === 'calculators' && <CalculatorsPage />}
           {activeView === 'settings' && (

@@ -232,6 +232,8 @@ export const TRANSLATIONS = {
     diveTypeShore: 'Desde costa',
     diveTypeBoat: 'Desde barco',
     diveTypePhotoBio: 'Foto / Bio',
+    noDivesAtSite: 'No hay inmersiones registradas en este sitio.',
+    divesAtSiteLabel: 'Inmersiones en este sitio',
   },
   fr: {
     appTitle: 'Diving App',
@@ -464,6 +466,8 @@ export const TRANSLATIONS = {
     diveTypeShore: 'Du bord',
     diveTypeBoat: 'En bateau',
     diveTypePhotoBio: 'Photo / Bio',
+    noDivesAtSite: 'Aucune plongée enregistrée sur ce site.',
+    divesAtSiteLabel: 'Plongées sur ce site',
   },
 } as const;
 

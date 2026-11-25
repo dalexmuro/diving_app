@@ -1,20 +1,34 @@
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { MapPin, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
-import { type FormEvent, useEffect, useRef, useState } from 'react';
+import {
+  ArrowDown,
+  ChevronDown,
+  ChevronRight,
+  Clock,
+  MapPin,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  X,
+} from 'lucide-react';
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { usePreferences } from '../i18n/I18nContext';
 import { type GeocodingResult, apiClient } from '../services/api';
-import { formatDepth } from '../services/units';
-import { type DiveSite } from '../types/domain';
+import { formatDepth, formatDuration } from '../services/units';
+import { type DiveSite, type DiveSummary } from '../types/domain';
 
 interface SitesPageProps {
   isOffline: boolean;
+  dives: DiveSummary[];
+  onSelectDive: (diveId: string) => void;
 }
 
-export function SitesPage({ isOffline }: SitesPageProps) {
-  const { unitSystem, t } = usePreferences();
+export function SitesPage({ isOffline, dives, onSelectDive }: SitesPageProps) {
+  const { language, unitSystem, t } = usePreferences();
   const [sites, setSites] = useState<DiveSite[]>([]);
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
+  const [expandedSiteId, setExpandedSiteId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [country, setCountry] = useState('');
@@ -189,6 +203,42 @@ export function SitesPage({ isOffline }: SitesPageProps) {
       map.fitBounds(bounds, { padding: [32, 32], maxZoom: 12 });
     }
   }, [sites]);
+
+  const divesBySiteId = useMemo(() => {
+    const grouped = new Map<string, DiveSummary[]>();
+    for (const dive of dives) {
+      if (!dive.site_id) continue;
+      const list = grouped.get(dive.site_id);
+      if (list) {
+        list.push(dive);
+      } else {
+        grouped.set(dive.site_id, [dive]);
+      }
+    }
+    for (const list of grouped.values()) {
+      list.sort((a, b) => b.started_at.localeCompare(a.started_at));
+    }
+    return grouped;
+  }, [dives]);
+
+  const dateTimeFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat(language === 'fr' ? 'fr-FR' : 'es-ES', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }),
+    [language],
+  );
+
+  function toggleSiteDives(site: DiveSite) {
+    setExpandedSiteId((prev) => {
+      const next = prev === site.id ? null : site.id;
+      if (next && !isOffline && site.latitude != null && site.longitude != null) {
+        mapRef.current?.flyTo([site.latitude, site.longitude], 13, { duration: 0.5 });
+      }
+      return next;
+    });
+  }
 
   function selectForEdit(site: DiveSite) {
     setSelectedSiteId(site.id);
@@ -382,79 +432,151 @@ export function SitesPage({ isOffline }: SitesPageProps) {
         {sites.length === 0 ? (
           <div className="p-6 text-center text-sm text-slate-600">{t('noDivesYet')}</div>
         ) : (
-          sites.map((site) => (
-            <div
-              key={site.id}
-              className="px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between gap-3"
-            >
-              <button
-                type="button"
-                onClick={() => selectForEdit(site)}
-                className="flex-1 min-w-0 text-left space-y-0.5 cursor-pointer"
-              >
-                <p className="text-sm font-semibold text-slate-900 truncate">
-                  {site.name}
-                  {site.country ? ` · ${site.country}` : ''}
-                </p>
-                <p className="text-xs text-slate-500 inline-flex items-center gap-1 tabular-telemetry">
-                  <MapPin className="w-3 h-3 text-sky-600 shrink-0" />
-                  {site.latitude != null && site.longitude != null
-                    ? `${site.latitude.toFixed(4)}, ${site.longitude.toFixed(4)}`
-                    : 'GPS —'}
-                </p>
-              </button>
+          sites.map((site) => {
+            const isExpanded = expandedSiteId === site.id;
+            const siteDives = divesBySiteId.get(site.id) ?? [];
 
-              <div className="flex items-center gap-3 shrink-0">
-                <div className="text-right">
-                  <p className="text-sm font-semibold text-slate-900 tabular-telemetry">
-                    {site.dive_count ?? 0}
-                  </p>
-                  <p className="text-xs text-slate-500 tabular-telemetry">
-                    {formatDepth(site.max_depth_m ?? null, unitSystem)}
-                  </p>
+            return (
+              <div key={site.id}>
+                <div
+                  className={`px-4 py-3.5 transition-colors flex items-center justify-between gap-3 ${
+                    isExpanded ? 'bg-sky-50/60' : 'hover:bg-slate-50'
+                  }`}
+                >
+                  <button
+                    type="button"
+                    aria-expanded={isExpanded}
+                    onClick={() => toggleSiteDives(site)}
+                    className="flex-1 min-w-0 text-left flex items-center gap-2.5 cursor-pointer"
+                  >
+                    {isExpanded ? (
+                      <ChevronDown className="w-4 h-4 text-sky-600 shrink-0" />
+                    ) : (
+                      <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                    )}
+                    <div className="min-w-0 space-y-0.5">
+                      <p className="text-sm font-semibold text-slate-900 truncate">
+                        {site.name}
+                        {site.country ? ` · ${site.country}` : ''}
+                      </p>
+                      <p className="text-xs text-slate-500 inline-flex items-center gap-1 tabular-telemetry">
+                        <MapPin className="w-3 h-3 text-sky-600 shrink-0" />
+                        {site.latitude != null && site.longitude != null
+                          ? `${site.latitude.toFixed(4)}, ${site.longitude.toFixed(4)}`
+                          : 'GPS —'}
+                      </p>
+                    </div>
+                  </button>
+
+                  <div className="flex items-center gap-3 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => toggleSiteDives(site)}
+                      className="text-right cursor-pointer"
+                    >
+                      <p className="text-sm font-semibold text-slate-900 tabular-telemetry">
+                        {site.dive_count ?? siteDives.length}
+                      </p>
+                      <p className="text-xs text-slate-500 tabular-telemetry">
+                        {formatDepth(site.max_depth_m ?? null, unitSystem)}
+                      </p>
+                    </button>
+
+                    {!isOffline &&
+                      (confirmDeleteId === site.id ? (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+                          >
+                            {t('cancel')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteSite(site.id)}
+                            className="px-2.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-xs font-medium text-white cursor-pointer"
+                          >
+                            {t('delete')}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            aria-label={t('edit')}
+                            onClick={() => selectForEdit(site)}
+                            className="touch-target flex items-center justify-center rounded-lg text-slate-500 hover:text-sky-700 hover:bg-sky-50 active:bg-sky-100 cursor-pointer"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={t('delete')}
+                            onClick={() => setConfirmDeleteId(site.id)}
+                            className="touch-target flex items-center justify-center rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 active:bg-red-100 cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                  </div>
                 </div>
 
-                {!isOffline &&
-                  (confirmDeleteId === site.id ? (
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDeleteId(null)}
-                        className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
-                      >
-                        {t('cancel')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteSite(site.id)}
-                        className="px-2.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-xs font-medium text-white cursor-pointer"
-                      >
-                        {t('delete')}
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        aria-label={t('edit')}
-                        onClick={() => selectForEdit(site)}
-                        className="touch-target flex items-center justify-center rounded-lg text-slate-500 hover:text-sky-700 hover:bg-sky-50 active:bg-sky-100 cursor-pointer"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={t('delete')}
-                        onClick={() => setConfirmDeleteId(site.id)}
-                        className="touch-target flex items-center justify-center rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 active:bg-red-100 cursor-pointer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
+                {isExpanded && (
+                  <div className="bg-slate-50/80 border-t border-slate-200/80 px-4 py-2.5">
+                    {siteDives.length === 0 ? (
+                      <p className="text-xs text-slate-500 py-1.5 pl-6">{t('noDivesAtSite')}</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 pl-6">
+                          {t('divesAtSiteLabel')} ({siteDives.length})
+                        </p>
+                        <ul className="space-y-1">
+                          {siteDives.map((dive) => {
+                            const formattedDate = Number.isNaN(Date.parse(dive.started_at))
+                              ? dive.started_at
+                              : dateTimeFormatter.format(new Date(dive.started_at));
+                            return (
+                              <li key={dive.id}>
+                                <button
+                                  type="button"
+                                  onClick={() => onSelectDive(dive.id)}
+                                  className="w-full text-left rounded-lg border border-slate-200/90 bg-white hover:border-sky-300 hover:bg-sky-50/50 active:bg-sky-100/60 px-3 py-2.5 flex items-center justify-between gap-3 transition-colors cursor-pointer"
+                                >
+                                  <div className="min-w-0 flex items-center gap-2.5">
+                                    {dive.log_number != null && (
+                                      <span className="shrink-0 inline-flex items-center justify-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-700 tabular-telemetry">
+                                        #{dive.log_number}
+                                      </span>
+                                    )}
+                                    <span className="text-xs sm:text-sm font-medium text-slate-900 truncate">
+                                      {formattedDate}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-3 shrink-0 text-xs text-slate-600 tabular-telemetry">
+                                    <span className="inline-flex items-center gap-1 font-semibold text-sky-700">
+                                      <ArrowDown className="w-3.5 h-3.5 shrink-0" />
+                                      {formatDepth(dive.max_depth_m, unitSystem)}
+                                    </span>
+                                    <span className="inline-flex items-center gap-1">
+                                      <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                      {formatDuration(dive.duration_s)}
+                                    </span>
+                                    <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                                  </div>
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </section>
