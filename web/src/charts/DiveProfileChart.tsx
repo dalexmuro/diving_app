@@ -162,15 +162,6 @@ export function DiveProfileChart({
     <div className="panel-surface p-5 space-y-4 relative">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-base font-semibold text-slate-900">{t('diveProfile')}</h2>
-        {layers.showAlerts && profile.violationCount > 0 && (
-          <div className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-1 text-xs font-medium text-red-800">
-            <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
-            <span>
-              {t('ascentAlert')} ({formatAscentRate(ascentLimitMMin, unitSystem)}) ·{' '}
-              <strong className="tabular-telemetry">{profile.violationCount}</strong>
-            </span>
-          </div>
-        )}
       </div>
 
       <div className="relative select-none">
@@ -427,6 +418,15 @@ export function DiveProfileChart({
                 </dd>
               </div>
             </dl>
+
+            {selected.exceedsAscentLimit && (
+              <div className="flex items-center gap-2 rounded-lg border border-red-500/40 bg-red-950/70 px-2.5 py-1.5 text-[11px] font-medium text-red-200">
+                <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                <span>
+                  {t('ascentAlert')} ({formatAscentRate(ascentLimitMMin, unitSystem)})
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>
