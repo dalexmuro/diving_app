@@ -90,12 +90,13 @@ export function DiveDetailPage({
   onSaved,
   onDeleted,
 }: DiveDetailPageProps) {
-  const { unitSystem, t } = usePreferences();
+  const { unitSystem, language, t } = usePreferences();
   const isNewDraft = diveId === null;
 
   const [dive, setDive] = useState<DiveDetail | null>(null);
   const [samples, setSamples] = useState<TelemetrySample[]>([]);
   const [loading, setLoading] = useState(!isNewDraft);
+  const [isEditing, setIsEditing] = useState(isNewDraft);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedToast, setSavedToast] = useState(false);
@@ -208,17 +209,107 @@ export function DiveDetailPage({
 
   useEffect(() => () => siteSearchAbortRef.current?.abort(), []);
 
+  function hydrateFormFromDive(data: DiveDetail) {
+    setDiveDate(isoToDateInput(data.started_at));
+    setStartTime(isoToTimeInput(data.started_at));
+    setEndTime(isoToTimeInput(data.ended_at));
+    setDurationMin(data.duration_s ? String(Math.round(data.duration_s / 60)) : '');
+    setMaxDepthM(String(data.max_depth_m));
+    setAvgDepthM(data.avg_depth_m != null ? String(data.avg_depth_m) : '');
+    setMinTempC(data.min_temp_c != null ? String(data.min_temp_c) : '');
+    setAvgTempC(data.avg_temp_c != null ? String(data.avg_temp_c) : '');
+    const loadedSiteName = data.site_name ?? '';
+    const loadedSiteCountry = data.site_country ?? '';
+    const loadedSiteLat = data.site_latitude != null ? String(data.site_latitude) : '';
+    const loadedSiteLng = data.site_longitude != null ? String(data.site_longitude) : '';
+    setSiteName(loadedSiteName);
+    setSiteCountry(loadedSiteCountry);
+    setSiteLat(loadedSiteLat);
+    setSiteLng(loadedSiteLng);
+    setDraftSiteName(loadedSiteName);
+    setDraftSiteCountry(loadedSiteCountry);
+    setDraftSiteLat(loadedSiteLat);
+    setDraftSiteLng(loadedSiteLng);
+    setSiteLocked(Boolean(loadedSiteName.trim()));
+    setSiteInputMode('search');
+    setSiteSearchResults([]);
+    setDiveCenter(data.dive_center ?? '');
+    setCenterLocation(data.dive_center_location ?? '');
+    setCenterLat(data.dive_center_lat != null ? String(data.dive_center_lat) : '');
+    setCenterLng(data.dive_center_lng != null ? String(data.dive_center_lng) : '');
+    setComputerName(data.computer_name ?? '');
+    setWaterType(data.water_type ?? '');
+    setGasType(data.gas_type);
+    setO2Pct(String(data.o2_pct));
+    setHePct(String(data.he_pct));
+    setStartPressure(data.start_pressure_bar != null ? String(data.start_pressure_bar) : '');
+    setEndPressure(data.end_pressure_bar != null ? String(data.end_pressure_bar) : '');
+    setTankVolume(data.tank_volume_l != null ? String(data.tank_volume_l) : '');
+    setTankMaterial(data.tank_material ?? '');
+    setTankConfig(data.tank_config ?? '');
+    setBallast(data.ballast_kg != null ? String(data.ballast_kg) : '');
+    setLogNumber(data.log_number != null ? String(data.log_number) : '');
+    setDiveMode(data.dive_mode ?? '');
+    setDayPeriod(data.day_period ?? '');
+    setSeaState(data.sea_state ?? '');
+    setWeather(data.weather ?? '');
+    setCurrentStrength(data.current_strength ?? '');
+    setVisibility(data.visibility ?? '');
+    setBuoyancy(data.buoyancy ?? '');
+    setFeeling(data.feeling ?? '');
+    setNotes(data.notes ?? '');
+
+    try {
+      setTags((JSON.parse(data.tags_json || '[]') as string[]).join(', '));
+    } catch {
+      setTags('');
+    }
+    try {
+      setDiveTypes(JSON.parse(data.dive_types_json || '[]') as string[]);
+    } catch {
+      setDiveTypes([]);
+    }
+    try {
+      const parsedBuddies = JSON.parse(data.buddies_json || '[]') as string[];
+      setBuddies(
+        parsedBuddies.length > 0
+          ? parsedBuddies
+          : data.buddy
+            ? data.buddy
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean)
+            : [],
+      );
+    } catch {
+      setBuddies([]);
+    }
+    try {
+      setGearUsed(JSON.parse(data.gear_used_json || '[]') as string[]);
+    } catch {
+      setGearUsed([]);
+    }
+    try {
+      const parsedStops = JSON.parse(data.deco_stops_json || '[]') as DecoStop[];
+      setDecoStops(parsedStops);
+    } catch {
+      setDecoStops([]);
+    }
+  }
+
   // Load existing dive or initialize draft FIT samples
   useEffect(() => {
     if (isNewDraft) {
       setSamples(draftFit?.parsed.samples ?? []);
       setLoading(false);
+      setIsEditing(true);
       setDirty(true);
       return;
     }
 
     let active = true;
     setLoading(true);
+    setIsEditing(false);
     void apiClient.fetchDiveDetail(diveId).then(({ data }) => {
       if (!active || !data) {
         setLoading(false);
@@ -226,92 +317,7 @@ export function DiveDetailPage({
       }
       setDive(data);
       setSamples(data.samples);
-      setDiveDate(isoToDateInput(data.started_at));
-      setStartTime(isoToTimeInput(data.started_at));
-      setEndTime(isoToTimeInput(data.ended_at));
-      setDurationMin(data.duration_s ? String(Math.round(data.duration_s / 60)) : '');
-      setMaxDepthM(String(data.max_depth_m));
-      setAvgDepthM(data.avg_depth_m != null ? String(data.avg_depth_m) : '');
-      setMinTempC(data.min_temp_c != null ? String(data.min_temp_c) : '');
-      setAvgTempC(data.avg_temp_c != null ? String(data.avg_temp_c) : '');
-      const loadedSiteName = data.site_name ?? '';
-      const loadedSiteCountry = data.site_country ?? '';
-      const loadedSiteLat = data.site_latitude != null ? String(data.site_latitude) : '';
-      const loadedSiteLng = data.site_longitude != null ? String(data.site_longitude) : '';
-      setSiteName(loadedSiteName);
-      setSiteCountry(loadedSiteCountry);
-      setSiteLat(loadedSiteLat);
-      setSiteLng(loadedSiteLng);
-      setDraftSiteName(loadedSiteName);
-      setDraftSiteCountry(loadedSiteCountry);
-      setDraftSiteLat(loadedSiteLat);
-      setDraftSiteLng(loadedSiteLng);
-      setSiteLocked(Boolean(loadedSiteName.trim()));
-      setSiteInputMode('search');
-      setSiteSearchResults([]);
-      setDiveCenter(data.dive_center ?? '');
-      setCenterLocation(data.dive_center_location ?? '');
-      setCenterLat(data.dive_center_lat != null ? String(data.dive_center_lat) : '');
-      setCenterLng(data.dive_center_lng != null ? String(data.dive_center_lng) : '');
-      setComputerName(data.computer_name ?? '');
-      setWaterType(data.water_type ?? '');
-      setGasType(data.gas_type);
-      setO2Pct(String(data.o2_pct));
-      setHePct(String(data.he_pct));
-      setStartPressure(data.start_pressure_bar != null ? String(data.start_pressure_bar) : '');
-      setEndPressure(data.end_pressure_bar != null ? String(data.end_pressure_bar) : '');
-      setTankVolume(data.tank_volume_l != null ? String(data.tank_volume_l) : '');
-      setTankMaterial(data.tank_material ?? '');
-      setTankConfig(data.tank_config ?? '');
-      setBallast(data.ballast_kg != null ? String(data.ballast_kg) : '');
-      setLogNumber(data.log_number != null ? String(data.log_number) : '');
-      setDiveMode(data.dive_mode ?? '');
-      setDayPeriod(data.day_period ?? '');
-      setSeaState(data.sea_state ?? '');
-      setWeather(data.weather ?? '');
-      setCurrentStrength(data.current_strength ?? '');
-      setVisibility(data.visibility ?? '');
-      setBuoyancy(data.buoyancy ?? '');
-      setFeeling(data.feeling ?? '');
-      setNotes(data.notes ?? '');
-
-      try {
-        setTags((JSON.parse(data.tags_json || '[]') as string[]).join(', '));
-      } catch {
-        setTags('');
-      }
-      try {
-        setDiveTypes(JSON.parse(data.dive_types_json || '[]') as string[]);
-      } catch {
-        setDiveTypes([]);
-      }
-      try {
-        const parsedBuddies = JSON.parse(data.buddies_json || '[]') as string[];
-        setBuddies(
-          parsedBuddies.length > 0
-            ? parsedBuddies
-            : data.buddy
-              ? data.buddy
-                  .split(',')
-                  .map((s) => s.trim())
-                  .filter(Boolean)
-              : [],
-        );
-      } catch {
-        setBuddies([]);
-      }
-      try {
-        setGearUsed(JSON.parse(data.gear_used_json || '[]') as string[]);
-      } catch {
-        setGearUsed([]);
-      }
-      try {
-        const parsedStops = JSON.parse(data.deco_stops_json || '[]') as DecoStop[];
-        setDecoStops(parsedStops);
-      } catch {
-        setDecoStops([]);
-      }
-
+      hydrateFormFromDive(data);
       setDirty(false);
       setLoading(false);
     });
@@ -399,6 +405,7 @@ export function DiveDetailPage({
       setDive(savedDive);
       setLogNumber(savedDive.log_number != null ? String(savedDive.log_number) : '');
       setDirty(false);
+      setIsEditing(false);
       await onSaved(savedDive.id);
       setSavedToast(true);
       if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
@@ -432,6 +439,7 @@ export function DiveDetailPage({
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        if (!isEditing) return;
         e.preventDefault();
         if (!saving && !isOffline) {
           void persistRef.current();
@@ -442,7 +450,7 @@ export function DiveDetailPage({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [saving, isOffline, confirmDeleteOpen]);
+  }, [isEditing, saving, isOffline, confirmDeleteOpen]);
 
   // Lock body scroll when delete modal is open
   useEffect(() => {
@@ -652,6 +660,118 @@ export function DiveDetailPage({
     markDirty();
   }
 
+  function handleCancelEdit() {
+    if (dive) {
+      hydrateFormFromDive(dive);
+    }
+    setDirty(false);
+    setSaveError(null);
+    setIsEditing(false);
+  }
+
+  const formattedDateDisplay = diveDate
+    ? new Intl.DateTimeFormat(language === 'fr' ? 'fr-FR' : 'es-ES', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      }).format(new Date(`${diveDate}T12:00:00`))
+    : '—';
+
+  const modeLabel =
+    diveMode === 'guided'
+      ? t('modeGuided')
+      : diveMode === 'autonomous'
+        ? t('modeAutonomous')
+        : diveMode === 'training'
+          ? t('modeTraining')
+          : '—';
+
+  const entryLabel =
+    entryType === 'shore'
+      ? t('diveTypeShore')
+      : entryType === 'boat'
+        ? t('diveTypeBoat')
+        : '—';
+
+  const waterLabel =
+    waterType === 'salt'
+      ? t('waterSalt')
+      : waterType === 'fresh'
+        ? t('waterFresh')
+        : waterType === 'pool'
+          ? t('waterPool')
+          : '—';
+
+  const tankMaterialLabel =
+    tankMaterial === 'steel'
+      ? t('tankSteel')
+      : tankMaterial === 'aluminum'
+        ? t('tankAluminum')
+        : tankMaterial === 'composite'
+          ? t('tankComposite')
+          : '—';
+
+  const tankConfigLabel =
+    tankConfig === 'single'
+      ? t('tankSingle')
+      : tankConfig === 'double'
+        ? t('tankDouble')
+        : tankConfig === 'sidemount'
+          ? t('tankSidemount')
+          : '—';
+
+  const gasLabel =
+    gasType === 'nitrox'
+      ? `${t('gasNitrox')} ${o2Pct}%`
+      : gasType === 'trimix'
+        ? `${t('gasTrimix')} ${o2Pct}/${hePct}`
+        : `${t('gasAir')} ${o2Pct}%`;
+
+  const dayPeriodLabel =
+    dayPeriod === 'day'
+      ? t('periodDay')
+      : dayPeriod === 'twilight'
+        ? t('periodTwilight')
+        : dayPeriod === 'night'
+          ? t('periodNight')
+          : '—';
+
+  const seaStateLabel =
+    seaState === 'calm'
+      ? t('seaCalm')
+      : seaState === 'slight'
+        ? t('seaSlight')
+        : seaState === 'moderate'
+          ? t('seaModerate')
+          : seaState === 'rough'
+            ? t('seaRough')
+            : '—';
+
+  const weatherLabel =
+    weather === 'sunny'
+      ? t('weatherSunny')
+      : weather === 'cloudy'
+        ? t('weatherCloudy')
+        : weather === 'rainy'
+          ? t('weatherRainy')
+          : weather === 'windy'
+            ? t('weatherWindy')
+            : '—';
+
+  const currentLabel =
+    currentStrength === 'none'
+      ? t('currentNone')
+      : currentStrength === 'weak'
+        ? t('currentWeak')
+        : currentStrength === 'moderate'
+          ? t('currentModerate')
+          : currentStrength === 'strong'
+            ? t('currentStrong')
+            : '—';
+
+  const ratingLabel = (val: RatingScale | '') =>
+    ratingOptions.find((o) => o.value === val)?.label ?? '—';
+
   return (
     <section className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -665,16 +785,46 @@ export function DiveDetailPage({
         </button>
 
         {!isNewDraft && !isOffline && (
-          <button
-            type="button"
-            onClick={() => setConfirmDeleteOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-medium px-3 py-1.5 transition-colors cursor-pointer"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            {t('deleteDive')}
-          </button>
+          <div className="flex items-center gap-2">
+            {isEditing ? (
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium px-3.5 py-1.5 transition-colors cursor-pointer"
+              >
+                {t('cancel')}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsEditing(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white text-xs font-medium px-3.5 py-1.5 transition-colors cursor-pointer"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                {t('edit')}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setConfirmDeleteOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-medium px-3 py-1.5 transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              {t('deleteDive')}
+            </button>
+          </div>
         )}
       </div>
+
+      {!isEditing && savedToast && (
+        <div
+          role="status"
+          className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-xs font-medium text-emerald-800"
+        >
+          <Check className="w-4 h-4 shrink-0" />
+          <span>{t('savedSuccess')}</span>
+        </div>
+      )}
 
       {/* Live Telemetry Summary Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -728,14 +878,310 @@ export function DiveDetailPage({
         decoStops={decoStops}
       />
 
-      {/* Complete Editable Dive Form — 3 visually distinct sections */}
-      <form
-        onSubmit={(e: FormEvent) => {
-          e.preventDefault();
-          void persistDive();
-        }}
-        className="space-y-5"
-      >
+      {!isEditing ? (
+        <div className="space-y-5">
+          {/* READ-ONLY SECTION 1: Location & Dive Center */}
+          <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-5 space-y-4">
+            <div className="flex items-center gap-2 border-b border-sky-200/70 pb-2.5">
+              <MapPin className="w-4 h-4 text-sky-700" />
+              <h2 className="text-sm font-semibold text-slate-900">{t('sectionLocationCenter')}</h2>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-slate-500">{t('siteName')}</p>
+                <p className="text-base font-semibold text-slate-900">
+                  {siteName || '—'}
+                  {siteCountry ? ` · ${siteCountry}` : ''}
+                </p>
+                {siteLat && siteLng && (
+                  <p className="text-xs text-slate-500 inline-flex items-center gap-1 tabular-telemetry">
+                    <MapPin className="w-3 h-3 text-sky-600 shrink-0" />
+                    {siteLat}, {siteLng}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-slate-500">{t('diveCenter')}</p>
+                <p className="text-sm font-semibold text-slate-900">{diveCenter || '—'}</p>
+                {centerLocation && (
+                  <p className="text-xs text-slate-500">{centerLocation}</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* READ-ONLY SECTION 2: Basic Information */}
+          <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+            <div className="flex items-center gap-2 border-b border-slate-200 pb-2.5">
+              <Compass className="w-4 h-4 text-sky-600" />
+              <h2 className="text-sm font-semibold text-slate-900">{t('sectionBasicInfo')}</h2>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+              <div className="space-y-0.5">
+                <p className="text-xs text-slate-500">{t('logNumber')}</p>
+                <p className="text-sm font-semibold tabular-telemetry text-slate-900">
+                  {logNumber ? `N° ${logNumber}` : '—'}
+                </p>
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-xs text-slate-500">{t('dateLabel')}</p>
+                <p className="text-sm font-semibold text-slate-900">{formattedDateDisplay}</p>
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-xs text-slate-500">{t('startTimeLabel')}</p>
+                <p className="text-sm font-semibold tabular-telemetry text-slate-900">
+                  {startTime || '—'}
+                </p>
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-xs text-slate-500">{t('endTimeLabel')}</p>
+                <p className="text-sm font-semibold tabular-telemetry text-slate-900">
+                  {endTime || '—'}
+                </p>
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-xs text-slate-500">{t('durationMin')}</p>
+                <p className="text-sm font-semibold tabular-telemetry text-slate-900">
+                  {formatDuration(currentDurationS)}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-slate-100">
+              <div className="space-y-0.5">
+                <p className="text-xs text-slate-500">{t('diveMode')}</p>
+                <p className="text-sm font-semibold text-slate-900">{modeLabel}</p>
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-xs text-slate-500">{t('diveEntryTitle')}</p>
+                <p className="text-sm font-semibold text-slate-900">{entryLabel}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-slate-500">{t('diveTypesTitle')}</p>
+                {explorationLabels.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {explorationLabels.map((lbl) => (
+                      <span
+                        key={lbl}
+                        className="inline-flex items-center rounded-full bg-sky-50 border border-sky-200 px-2.5 py-0.5 text-xs font-medium text-sky-900"
+                      >
+                        {lbl}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm font-semibold text-slate-900">—</p>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-2 border-t border-slate-100">
+              <div className="space-y-0.5">
+                <p className="text-xs text-slate-500">{t('maxDepth')}</p>
+                <p className="text-sm font-semibold tabular-telemetry text-slate-900">
+                  {formatDepth(maxDepthM ? Number(maxDepthM) : null, unitSystem)}
+                </p>
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-xs text-slate-500">{t('avgDepth')}</p>
+                <p className="text-sm font-semibold tabular-telemetry text-slate-900">
+                  {formatDepth(avgDepthM ? Number(avgDepthM) : null, unitSystem)}
+                </p>
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-xs text-slate-500">{t('minTemp')}</p>
+                <p className="text-sm font-semibold tabular-telemetry text-slate-900">
+                  {formatTemp(minTempC ? Number(minTempC) : null, unitSystem)}
+                </p>
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-xs text-slate-500">{t('avgTemp')}</p>
+                <p className="text-sm font-semibold tabular-telemetry text-slate-900">
+                  {formatTemp(avgTempC ? Number(avgTempC) : null, unitSystem)}
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-4 space-y-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {t('decoStopsTitle')}
+              </h3>
+              {decoStops.length === 0 ? (
+                <p className="text-xs text-slate-500">{t('noDecoStops')}</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {decoStops.map((stop, idx) => (
+                    <span
+                      key={`${stop.depth_m}-${stop.duration_min}-${idx}`}
+                      className="inline-flex items-center rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-900 tabular-telemetry"
+                    >
+                      {formatDepth(stop.depth_m, unitSystem)} · {stop.duration_min} min
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* READ-ONLY SECTION 3: Complementary Information */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-5 space-y-5">
+            <div className="flex items-center gap-2 border-b border-slate-200 pb-2.5">
+              <SlidersHorizontal className="w-4 h-4 text-slate-600" />
+              <h2 className="text-sm font-semibold text-slate-900">{t('sectionExtraInfo')}</h2>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="space-y-0.5">
+                <p className="text-xs text-slate-500">{t('computerUsed')}</p>
+                <p className="text-sm font-semibold text-slate-900">{computerName || '—'}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-slate-500">{t('buddy')}</p>
+                {buddies.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {buddies.map((b) => (
+                      <span
+                        key={b}
+                        className="inline-flex items-center rounded-full bg-white border border-slate-200 px-2.5 py-0.5 text-xs font-medium text-slate-800"
+                      >
+                        {b}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm font-semibold text-slate-900">—</p>
+                )}
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-slate-500">{t('gearUsed')}</p>
+                {gearUsed.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {gearUsed.map((g) => (
+                      <span
+                        key={g}
+                        className="inline-flex items-center rounded-full bg-white border border-slate-200 px-2.5 py-0.5 text-xs font-medium text-slate-800"
+                      >
+                        {g}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm font-semibold text-slate-900">—</p>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-3 pt-2 border-t border-slate-200/80">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {t('subSectionTankGas')}
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="space-y-0.5">
+                  <p className="text-xs text-slate-500">{t('startPressure')}</p>
+                  <p className="text-sm font-semibold tabular-telemetry text-slate-900">
+                    {formatPressure(pStartNum, unitSystem)}
+                  </p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs text-slate-500">{t('endPressure')}</p>
+                  <p className="text-sm font-semibold tabular-telemetry text-slate-900">
+                    {formatPressure(pEndNum, unitSystem)}
+                  </p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs text-slate-500">{t('tankVolume')}</p>
+                  <p className="text-sm font-semibold tabular-telemetry text-slate-900">
+                    {tankVolume ? `${tankVolume} L` : '—'}
+                  </p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs text-slate-500">{t('tankMaterial')}</p>
+                  <p className="text-sm font-semibold text-slate-900">{tankMaterialLabel}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs text-slate-500">{t('tankConfig')}</p>
+                  <p className="text-sm font-semibold text-slate-900">{tankConfigLabel}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs text-slate-500">{t('ballast')}</p>
+                  <p className="text-sm font-semibold tabular-telemetry text-slate-900">
+                    {ballast ? `${ballast} kg` : '—'}
+                  </p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs text-slate-500">{t('waterType')}</p>
+                  <p className="text-sm font-semibold text-slate-900">{waterLabel}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs text-slate-500">Gas</p>
+                  <p className="text-sm font-semibold tabular-telemetry text-slate-900">
+                    {gasLabel}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3 pt-2 border-t border-slate-200/80">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {t('subSectionConditions')}
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="space-y-0.5">
+                  <p className="text-xs text-slate-500">{t('dayPeriod')}</p>
+                  <p className="text-sm font-semibold text-slate-900">{dayPeriodLabel}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs text-slate-500">{t('seaState')}</p>
+                  <p className="text-sm font-semibold text-slate-900">{seaStateLabel}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs text-slate-500">{t('weather')}</p>
+                  <p className="text-sm font-semibold text-slate-900">{weatherLabel}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs text-slate-500">{t('currentStrength')}</p>
+                  <p className="text-sm font-semibold text-slate-900">{currentLabel}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs text-slate-500">{t('visibility')}</p>
+                  <p className="text-sm font-semibold text-slate-900">{ratingLabel(visibility)}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs text-slate-500">{t('buoyancy')}</p>
+                  <p className="text-sm font-semibold text-slate-900">{ratingLabel(buoyancy)}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs text-slate-500">{t('feeling')}</p>
+                  <p className="text-sm font-semibold text-slate-900">{ratingLabel(feeling)}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs text-slate-500">{t('tags')}</p>
+                  <p className="text-sm font-semibold text-slate-900">{tags || '—'}</p>
+                </div>
+              </div>
+
+              {notes && (
+                <div className="space-y-1 pt-2">
+                  <p className="text-xs text-slate-500">{t('notes')}</p>
+                  <p className="rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 whitespace-pre-wrap">
+                    {notes}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <form
+          onSubmit={(e: FormEvent) => {
+            e.preventDefault();
+            void persistDive();
+          }}
+          className="space-y-5"
+        >
         {/* SECTION 1: Location & Dive Center */}
         <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-5 space-y-4">
           <div className="flex items-center gap-2 border-b border-sky-200/70 pb-2.5">
@@ -1564,7 +2010,8 @@ export function DiveDetailPage({
             {saving ? '...' : isNewDraft ? t('saveDive') : t('saveChanges')}
           </button>
         </div>
-      </form>
+        </form>
+      )}
 
       {/* Delete Confirmation — Bottom Sheet on mobile, Dialog on sm+ */}
       {confirmDeleteOpen && (
