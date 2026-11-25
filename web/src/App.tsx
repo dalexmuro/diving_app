@@ -4,6 +4,8 @@ import { AuthGate } from './components/AuthGate';
 import { PreferencesContext } from './i18n/I18nContext';
 import { TRANSLATIONS, type TranslationKey } from './i18n/translations';
 import { offlineCache } from './offline/cacheDb';
+import { DiveDetailPage } from './pages/DiveDetailPage';
+import { LogbookPage } from './pages/LogbookPage';
 import { apiClient } from './services/api';
 import { formatDepth, formatDuration, formatSac } from './services/units';
 import {
@@ -26,6 +28,7 @@ export function App() {
   const [ascentLimitMMin, setAscentLimitMMin] = useState(15);
 
   const [activeView, setActiveView] = useState<AppView>('dashboard');
+  const [selectedDiveId, setSelectedDiveId] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);
   const [stats, setStats] = useState<GlobalStats | null>(null);
   const [dives, setDives] = useState<DiveSummary[]>([]);
@@ -92,6 +95,22 @@ export function App() {
     [language, unitSystem, ascentLimitMMin, setPreferences],
   );
 
+  const openDiveDetail = useCallback((diveId: string) => {
+    setSelectedDiveId(diveId);
+    setActiveView('dive-detail');
+  }, []);
+
+  const handleCreateManualDive = useCallback(async () => {
+    const created = await apiClient.createDive({
+      started_at: new Date().toISOString(),
+      duration_s: 2400,
+      max_depth_m: 18,
+      site_name: 'New Dive',
+    });
+    await loadInitialData();
+    openDiveDetail(created.id);
+  }, [loadInitialData, openDiveDetail]);
+
   if (!authChecked) {
     return (
       <div className="min-h-dvh bg-[#0b192c] flex items-center justify-center">
@@ -135,12 +154,25 @@ export function App() {
           });
         }}
       >
-        <section className="space-y-6">
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-            {prefsValue.t(
-              activeView === 'logbook' || activeView === 'dive-detail'
-                ? 'navLogbook'
-                : activeView === 'statistics'
+        {activeView === 'logbook' ? (
+          <LogbookPage
+            dives={dives}
+            isOffline={isOffline}
+            onSelectDive={openDiveDetail}
+            onCreateManualDive={handleCreateManualDive}
+          />
+        ) : activeView === 'dive-detail' && selectedDiveId ? (
+          <DiveDetailPage
+            diveId={selectedDiveId}
+            isOffline={isOffline}
+            onBack={() => setActiveView('logbook')}
+            onSaved={loadInitialData}
+          />
+        ) : (
+          <section className="space-y-6">
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+              {prefsValue.t(
+                activeView === 'statistics'
                   ? 'navStatistics'
                   : activeView === 'sites'
                     ? 'navSites'
@@ -151,36 +183,39 @@ export function App() {
                         : activeView === 'settings'
                           ? 'navSettings'
                           : 'navDashboard',
-            )}
-          </h1>
+              )}
+            </h1>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="panel-surface p-4 space-y-1">
-              <p className="text-xs font-medium text-slate-600">{prefsValue.t('totalDives')}</p>
-              <p className="text-2xl font-semibold tabular-telemetry text-slate-900">
-                {stats?.totalDives ?? dives.length}
-              </p>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="panel-surface p-4 space-y-1">
+                <p className="text-xs font-medium text-slate-600">{prefsValue.t('totalDives')}</p>
+                <p className="text-2xl font-semibold tabular-telemetry text-slate-900">
+                  {stats?.totalDives ?? dives.length}
+                </p>
+              </div>
+              <div className="panel-surface p-4 space-y-1">
+                <p className="text-xs font-medium text-slate-600">
+                  {prefsValue.t('underwaterTime')}
+                </p>
+                <p className="text-2xl font-semibold tabular-telemetry text-slate-900">
+                  {formatDuration(stats?.totalDurationS ?? 0)}
+                </p>
+              </div>
+              <div className="panel-surface p-4 space-y-1">
+                <p className="text-xs font-medium text-slate-600">{prefsValue.t('maxDepth')}</p>
+                <p className="text-2xl font-semibold tabular-telemetry text-slate-900">
+                  {formatDepth(stats?.maxDepthM ?? null, unitSystem)}
+                </p>
+              </div>
+              <div className="panel-surface p-4 space-y-1">
+                <p className="text-xs font-medium text-slate-600">{prefsValue.t('avgSac')}</p>
+                <p className="text-2xl font-semibold tabular-telemetry text-slate-900">
+                  {formatSac(stats?.avgSacLMin ?? null, unitSystem)}
+                </p>
+              </div>
             </div>
-            <div className="panel-surface p-4 space-y-1">
-              <p className="text-xs font-medium text-slate-600">{prefsValue.t('underwaterTime')}</p>
-              <p className="text-2xl font-semibold tabular-telemetry text-slate-900">
-                {formatDuration(stats?.totalDurationS ?? 0)}
-              </p>
-            </div>
-            <div className="panel-surface p-4 space-y-1">
-              <p className="text-xs font-medium text-slate-600">{prefsValue.t('maxDepth')}</p>
-              <p className="text-2xl font-semibold tabular-telemetry text-slate-900">
-                {formatDepth(stats?.maxDepthM ?? null, unitSystem)}
-              </p>
-            </div>
-            <div className="panel-surface p-4 space-y-1">
-              <p className="text-xs font-medium text-slate-600">{prefsValue.t('avgSac')}</p>
-              <p className="text-2xl font-semibold tabular-telemetry text-slate-900">
-                {formatSac(stats?.avgSacLMin ?? null, unitSystem)}
-              </p>
-            </div>
-          </div>
-        </section>
+          </section>
+        )}
       </AppShell>
     </PreferencesContext.Provider>
   );
