@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, Plus, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, Check, Compass, MapPin, Plus, Save, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { DiveProfileChart } from '../charts/DiveProfileChart';
 import { LocationPicker } from '../components/LocationPicker';
@@ -460,129 +460,22 @@ export function DiveDetailPage({
         decoStops={decoStops}
       />
 
-      {/* Complete Editable Dive Form */}
+      {/* Complete Editable Dive Form — 3 visually distinct sections */}
       <form
         onSubmit={(e: FormEvent) => {
           e.preventDefault();
           void persistDive();
         }}
-        className="panel-surface p-5 space-y-6"
+        className="space-y-5"
       >
-        {/* Row 1: Date, Start/End Time, Duration, Depths & Temps (ALL editable!) */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('dateLabel')}</span>
-            <input
-              type="date"
-              required
-              value={diveDate}
-              onChange={(e) => {
-                setDiveDate(e.target.value);
-                markDirty();
-              }}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
-            />
-          </label>
-          <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('startTimeLabel')}</span>
-            <input
-              type="time"
-              value={startTime}
-              onChange={(e) => {
-                setStartTime(e.target.value);
-                markDirty();
-              }}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
-            />
-          </label>
-          <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('endTimeLabel')}</span>
-            <input
-              type="time"
-              value={endTime}
-              onChange={(e) => {
-                setEndTime(e.target.value);
-                markDirty();
-              }}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
-            />
-          </label>
-          <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('durationMin')}</span>
-            <input
-              type="number"
-              min="0"
-              step="1"
-              required
-              value={durationMin}
-              onChange={(e) => {
-                setDurationMin(e.target.value);
-                markDirty();
-              }}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
-            />
-          </label>
+        {/* SECTION 1: Location & Dive Center */}
+        <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-5 space-y-4">
+          <div className="flex items-center gap-2 border-b border-sky-200/70 pb-2.5">
+            <MapPin className="w-4 h-4 text-sky-700" />
+            <h2 className="text-sm font-semibold text-slate-900">{t('sectionLocationCenter')}</h2>
+          </div>
 
-          <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('maxDepth')} (m)</span>
-            <input
-              type="number"
-              min="0"
-              step="any"
-              required
-              value={maxDepthM}
-              onChange={(e) => {
-                setMaxDepthM(e.target.value);
-                markDirty();
-              }}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
-            />
-          </label>
-          <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('avgDepth')} (m)</span>
-            <input
-              type="number"
-              min="0"
-              step="any"
-              value={avgDepthM}
-              onChange={(e) => {
-                setAvgDepthM(e.target.value);
-                markDirty();
-              }}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
-            />
-          </label>
-          <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('minTemp')}</span>
-            <input
-              type="number"
-              step="any"
-              value={minTempC}
-              onChange={(e) => {
-                setMinTempC(e.target.value);
-                markDirty();
-              }}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
-            />
-          </label>
-          <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('avgTemp')}</span>
-            <input
-              type="number"
-              step="any"
-              value={avgTempC}
-              onChange={(e) => {
-                setAvgTempC(e.target.value);
-                markDirty();
-              }}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
-            />
-          </label>
-        </div>
-
-        {/* Row 2: Site & Dive Center + Searchable GPS Locations (#5) */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="space-y-2.5">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <label className="space-y-1 text-xs font-medium text-slate-700 block">
               <span>{t('siteName')}</span>
               <input
@@ -592,23 +485,10 @@ export function DiveDetailPage({
                   setSiteName(e.target.value);
                   markDirty();
                 }}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm text-slate-900"
               />
             </label>
-            <LocationPicker
-              label={t('siteLocation')}
-              latitude={siteLat}
-              longitude={siteLng}
-              isOffline={isOffline}
-              onChange={(patch) => {
-                if (patch.latitude !== undefined) setSiteLat(patch.latitude);
-                if (patch.longitude !== undefined) setSiteLng(patch.longitude);
-                markDirty();
-              }}
-            />
-          </div>
 
-          <div className="space-y-2.5">
             <SmartSelect
               label={t('diveCenter')}
               value={diveCenter}
@@ -616,339 +496,465 @@ export function DiveDetailPage({
               placeholder={t('selectOrType')}
               onChange={handleCenterSelect}
             />
-            <LocationPicker
-              label={t('centerLocation')}
-              locationText={centerLocation}
-              latitude={centerLat}
-              longitude={centerLng}
-              isOffline={isOffline}
-              showLocationText
-              onChange={(patch) => {
-                if (patch.locationText !== undefined) setCenterLocation(patch.locationText);
-                if (patch.latitude !== undefined) setCenterLat(patch.latitude);
-                if (patch.longitude !== undefined) setCenterLng(patch.longitude);
-                markDirty();
-              }}
-            />
           </div>
-        </div>
 
-        {/* Row 3: Computer, Buddies (multi), Suit & Gear (multi) (#2 & #3) */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <SmartSelect
-            label={t('computerUsed')}
-            value={computerName}
-            options={computersCatalog.map((c) => c.name)}
-            placeholder={t('selectOrType')}
-            onChange={(val) => {
-              setComputerName(val);
-              markDirty();
-            }}
-          />
-
-          <SmartMultiSelect
-            label={t('buddy')}
-            values={buddies}
-            options={buddiesCatalog.map((b) => b.name)}
-            placeholder={t('selectOrType')}
-            addLabel={t('addOption')}
-            onChange={(vals) => {
-              setBuddies(vals);
-              markDirty();
-            }}
-          />
-
-          <SmartMultiSelect
-            label={t('gearUsed')}
-            values={gearUsed}
-            options={gearCatalog.map((g) => g.name)}
-            placeholder={t('selectOrType')}
-            addLabel={t('addOption')}
-            onChange={(vals) => {
-              setGearUsed(vals);
+          <LocationPicker
+            label={t('siteLocation')}
+            latitude={siteLat}
+            longitude={siteLng}
+            isOffline={isOffline}
+            layout="horizontal"
+            onChange={(patch) => {
+              if (patch.latitude !== undefined) setSiteLat(patch.latitude);
+              if (patch.longitude !== undefined) setSiteLng(patch.longitude);
               markDirty();
             }}
           />
         </div>
 
-        {/* Row 4: Paliers / Deco Stops (#1) */}
-        <div className="rounded-lg border border-slate-200 p-4 space-y-3">
-          <h3 className="text-sm font-semibold text-slate-900">{t('decoStopsTitle')}</h3>
-
-          {decoStops.length === 0 ? (
-            <p className="text-xs text-slate-500">{t('noDecoStops')}</p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {decoStops.map((stop, idx) => (
-                <span
-                  key={`${stop.depth_m}-${stop.duration_min}-${idx}`}
-                  className="inline-flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-900 tabular-telemetry"
-                >
-                  {formatDepth(stop.depth_m, unitSystem)} · {stop.duration_min} min
-                  <button
-                    type="button"
-                    aria-label={t('delete')}
-                    onClick={() => {
-                      setDecoStops((prev) => prev.filter((_, i) => i !== idx));
-                      markDirty();
-                    }}
-                    className="text-violet-600 hover:text-red-600 cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-
-          <div className="grid grid-cols-3 sm:max-w-md gap-2 items-end">
-            <label className="space-y-1 text-xs font-medium text-slate-700">
-              <span>{t('stopDepthM')}</span>
-              <input
-                type="number"
-                min="1"
-                step="0.5"
-                value={newStopDepth}
-                onChange={(e) => setNewStopDepth(e.target.value)}
-                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
-              />
-            </label>
-            <label className="space-y-1 text-xs font-medium text-slate-700">
-              <span>{t('stopDurationMin')}</span>
-              <input
-                type="number"
-                min="1"
-                step="1"
-                value={newStopMin}
-                onChange={(e) => setNewStopMin(e.target.value)}
-                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={addDecoStop}
-              className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-medium px-3 py-2 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5 text-violet-600" />
-              <span>{t('addDecoStop')}</span>
-            </button>
+        {/* SECTION 2: Basic Information */}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+          <div className="flex items-center gap-2 border-b border-slate-200 pb-2.5">
+            <Compass className="w-4 h-4 text-sky-600" />
+            <h2 className="text-sm font-semibold text-slate-900">{t('sectionBasicInfo')}</h2>
           </div>
-        </div>
 
-        {/* Row 5: Pressures, Tank, Ballast, Water, Gas, Ratings */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-          <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('startPressure')} (bar)</span>
-            <input
-              type="number"
-              step="any"
-              value={startPressure}
-              onChange={(e) => {
-                setStartPressure(e.target.value);
-                markDirty();
-              }}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
-            />
-          </label>
-          <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('endPressure')} (bar)</span>
-            <input
-              type="number"
-              step="any"
-              value={endPressure}
-              onChange={(e) => {
-                setEndPressure(e.target.value);
-                markDirty();
-              }}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
-            />
-          </label>
-          <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('tankVolume')} (L)</span>
-            <input
-              type="number"
-              step="any"
-              value={tankVolume}
-              onChange={(e) => {
-                setTankVolume(e.target.value);
-                markDirty();
-              }}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
-            />
-          </label>
-          <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('tankMaterial')}</span>
-            <select
-              value={tankMaterial}
-              onChange={(e) => {
-                setTankMaterial(e.target.value as TankMaterial | '');
-                markDirty();
-              }}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
-            >
-              <option value="">—</option>
-              <option value="steel">{t('tankSteel')}</option>
-              <option value="aluminum">{t('tankAluminum')}</option>
-              <option value="composite">{t('tankComposite')}</option>
-            </select>
-          </label>
-          <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('ballast')} (kg)</span>
-            <input
-              type="number"
-              step="any"
-              value={ballast}
-              onChange={(e) => {
-                setBallast(e.target.value);
-                markDirty();
-              }}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
-            />
-          </label>
-          <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('waterType')}</span>
-            <select
-              value={waterType}
-              onChange={(e) => {
-                setWaterType(e.target.value as WaterType | '');
-                markDirty();
-              }}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
-            >
-              <option value="">—</option>
-              <option value="salt">{t('waterSalt')}</option>
-              <option value="fresh">{t('waterFresh')}</option>
-            </select>
-          </label>
-
-          <div className="grid grid-cols-3 gap-1.5 col-span-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <label className="space-y-1 text-xs font-medium text-slate-700">
-              <span>Gas</span>
-              <select
-                value={gasType}
+              <span>{t('dateLabel')}</span>
+              <input
+                type="date"
+                required
+                value={diveDate}
                 onChange={(e) => {
-                  setGasType(e.target.value as GasType);
+                  setDiveDate(e.target.value);
                   markDirty();
                 }}
-                className="w-full px-2 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
-              >
-                <option value="air">{t('gasAir')}</option>
-                <option value="nitrox">{t('gasNitrox')}</option>
-                <option value="trimix">{t('gasTrimix')}</option>
-              </select>
-            </label>
-            <label className="space-y-1 text-xs font-medium text-slate-700">
-              <span>%O2</span>
-              <input
-                type="number"
-                min="10"
-                max="100"
-                value={o2Pct}
-                onChange={(e) => {
-                  setO2Pct(e.target.value);
-                  markDirty();
-                }}
-                className="w-full px-2 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm tabular-telemetry text-slate-900"
               />
             </label>
             <label className="space-y-1 text-xs font-medium text-slate-700">
-              <span>%He</span>
+              <span>{t('startTimeLabel')}</span>
+              <input
+                type="time"
+                value={startTime}
+                onChange={(e) => {
+                  setStartTime(e.target.value);
+                  markDirty();
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm tabular-telemetry text-slate-900"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('endTimeLabel')}</span>
+              <input
+                type="time"
+                value={endTime}
+                onChange={(e) => {
+                  setEndTime(e.target.value);
+                  markDirty();
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm tabular-telemetry text-slate-900"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('durationMin')}</span>
               <input
                 type="number"
                 min="0"
-                max="80"
-                value={hePct}
+                step="1"
+                required
+                value={durationMin}
                 onChange={(e) => {
-                  setHePct(e.target.value);
+                  setDurationMin(e.target.value);
                   markDirty();
                 }}
-                className="w-full px-2 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm tabular-telemetry text-slate-900"
+              />
+            </label>
+
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('maxDepth')} (m)</span>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                required
+                value={maxDepthM}
+                onChange={(e) => {
+                  setMaxDepthM(e.target.value);
+                  markDirty();
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm tabular-telemetry text-slate-900"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('avgDepth')} (m)</span>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                value={avgDepthM}
+                onChange={(e) => {
+                  setAvgDepthM(e.target.value);
+                  markDirty();
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm tabular-telemetry text-slate-900"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('minTemp')}</span>
+              <input
+                type="number"
+                step="any"
+                value={minTempC}
+                onChange={(e) => {
+                  setMinTempC(e.target.value);
+                  markDirty();
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm tabular-telemetry text-slate-900"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('avgTemp')}</span>
+              <input
+                type="number"
+                step="any"
+                value={avgTempC}
+                onChange={(e) => {
+                  setAvgTempC(e.target.value);
+                  markDirty();
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm tabular-telemetry text-slate-900"
               />
             </label>
           </div>
 
-          <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('visibility')}</span>
-            <select
-              value={visibility}
-              onChange={(e) => {
-                setVisibility(e.target.value as RatingScale | '');
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pt-1">
+            <SmartSelect
+              label={t('computerUsed')}
+              value={computerName}
+              options={computersCatalog.map((c) => c.name)}
+              placeholder={t('selectOrType')}
+              onChange={(val) => {
+                setComputerName(val);
                 markDirty();
               }}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
-            >
-              <option value="">—</option>
-              {ratingOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('buoyancy')}</span>
-            <select
-              value={buoyancy}
-              onChange={(e) => {
-                setBuoyancy(e.target.value as RatingScale | '');
+            />
+
+            <SmartMultiSelect
+              label={t('buddy')}
+              values={buddies}
+              options={buddiesCatalog.map((b) => b.name)}
+              placeholder={t('selectOrType')}
+              addLabel={t('addOption')}
+              onChange={(vals) => {
+                setBuddies(vals);
                 markDirty();
               }}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
-            >
-              <option value="">—</option>
-              {ratingOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('feeling')}</span>
-            <select
-              value={feeling}
-              onChange={(e) => {
-                setFeeling(e.target.value as RatingScale | '');
+            />
+
+            <SmartMultiSelect
+              label={t('gearUsed')}
+              values={gearUsed}
+              options={gearCatalog.map((g) => g.name)}
+              placeholder={t('selectOrType')}
+              addLabel={t('addOption')}
+              onChange={(vals) => {
+                setGearUsed(vals);
                 markDirty();
               }}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
-            >
-              <option value="">—</option>
-              {ratingOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 text-xs font-medium text-slate-700">
-            <span>{t('tags')}</span>
-            <input
-              type="text"
-              value={tags}
+            />
+          </div>
+        </div>
+
+        {/* SECTION 3: Complementary Information */}
+        <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-5 space-y-5">
+          <div className="flex items-center gap-2 border-b border-slate-200 pb-2.5">
+            <SlidersHorizontal className="w-4 h-4 text-slate-600" />
+            <h2 className="text-sm font-semibold text-slate-900">{t('sectionExtraInfo')}</h2>
+          </div>
+
+          {/* Paliers / Deco Stops */}
+          <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+            <h3 className="text-sm font-semibold text-slate-900">{t('decoStopsTitle')}</h3>
+
+            {decoStops.length === 0 ? (
+              <p className="text-xs text-slate-500">{t('noDecoStops')}</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {decoStops.map((stop, idx) => (
+                  <span
+                    key={`${stop.depth_m}-${stop.duration_min}-${idx}`}
+                    className="inline-flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-900 tabular-telemetry"
+                  >
+                    {formatDepth(stop.depth_m, unitSystem)} · {stop.duration_min} min
+                    <button
+                      type="button"
+                      aria-label={t('delete')}
+                      onClick={() => {
+                        setDecoStops((prev) => prev.filter((_, i) => i !== idx));
+                        markDirty();
+                      }}
+                      className="text-violet-600 hover:text-red-600 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="grid grid-cols-3 sm:max-w-md gap-2 items-end">
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('stopDepthM')}</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="any"
+                  value={newStopDepth}
+                  onChange={(e) => setNewStopDepth(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-sm tabular-telemetry text-slate-900"
+                />
+              </label>
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('stopDurationMin')}</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={newStopMin}
+                  onChange={(e) => setNewStopMin(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-sm tabular-telemetry text-slate-900"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={addDecoStop}
+                className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-medium px-3 py-2 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5 text-violet-600" />
+                <span>{t('addDecoStop')}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Pressures, Tank, Ballast, Water, Gas, Ratings */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('startPressure')} (bar)</span>
+              <input
+                type="number"
+                step="any"
+                value={startPressure}
+                onChange={(e) => {
+                  setStartPressure(e.target.value);
+                  markDirty();
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm tabular-telemetry text-slate-900"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('endPressure')} (bar)</span>
+              <input
+                type="number"
+                step="any"
+                value={endPressure}
+                onChange={(e) => {
+                  setEndPressure(e.target.value);
+                  markDirty();
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm tabular-telemetry text-slate-900"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('tankVolume')} (L)</span>
+              <input
+                type="number"
+                step="any"
+                value={tankVolume}
+                onChange={(e) => {
+                  setTankVolume(e.target.value);
+                  markDirty();
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm tabular-telemetry text-slate-900"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('tankMaterial')}</span>
+              <select
+                value={tankMaterial}
+                onChange={(e) => {
+                  setTankMaterial(e.target.value as TankMaterial | '');
+                  markDirty();
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+              >
+                <option value="">—</option>
+                <option value="steel">{t('tankSteel')}</option>
+                <option value="aluminum">{t('tankAluminum')}</option>
+                <option value="composite">{t('tankComposite')}</option>
+              </select>
+            </label>
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('ballast')} (kg)</span>
+              <input
+                type="number"
+                step="any"
+                value={ballast}
+                onChange={(e) => {
+                  setBallast(e.target.value);
+                  markDirty();
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm tabular-telemetry text-slate-900"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('waterType')}</span>
+              <select
+                value={waterType}
+                onChange={(e) => {
+                  setWaterType(e.target.value as WaterType | '');
+                  markDirty();
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+              >
+                <option value="">—</option>
+                <option value="salt">{t('waterSalt')}</option>
+                <option value="fresh">{t('waterFresh')}</option>
+              </select>
+            </label>
+
+            <div className="grid grid-cols-3 gap-1.5 col-span-2">
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>Gas</span>
+                <select
+                  value={gasType}
+                  onChange={(e) => {
+                    setGasType(e.target.value as GasType);
+                    markDirty();
+                  }}
+                  className="w-full px-2 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+                >
+                  <option value="air">{t('gasAir')}</option>
+                  <option value="nitrox">{t('gasNitrox')}</option>
+                  <option value="trimix">{t('gasTrimix')}</option>
+                </select>
+              </label>
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>%O2</span>
+                <input
+                  type="number"
+                  min="10"
+                  max="100"
+                  value={o2Pct}
+                  onChange={(e) => {
+                    setO2Pct(e.target.value);
+                    markDirty();
+                  }}
+                  className="w-full px-2 py-2 rounded-lg border border-slate-300 bg-white text-sm tabular-telemetry"
+                />
+              </label>
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>%He</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="80"
+                  value={hePct}
+                  onChange={(e) => {
+                    setHePct(e.target.value);
+                    markDirty();
+                  }}
+                  className="w-full px-2 py-2 rounded-lg border border-slate-300 bg-white text-sm tabular-telemetry"
+                />
+              </label>
+            </div>
+
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('visibility')}</span>
+              <select
+                value={visibility}
+                onChange={(e) => {
+                  setVisibility(e.target.value as RatingScale | '');
+                  markDirty();
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+              >
+                <option value="">—</option>
+                {ratingOptions.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('buoyancy')}</span>
+              <select
+                value={buoyancy}
+                onChange={(e) => {
+                  setBuoyancy(e.target.value as RatingScale | '');
+                  markDirty();
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+              >
+                <option value="">—</option>
+                {ratingOptions.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('feeling')}</span>
+              <select
+                value={feeling}
+                onChange={(e) => {
+                  setFeeling(e.target.value as RatingScale | '');
+                  markDirty();
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+              >
+                <option value="">—</option>
+                {ratingOptions.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('tags')}</span>
+              <input
+                type="text"
+                value={tags}
+                onChange={(e) => {
+                  setTags(e.target.value);
+                  markDirty();
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm text-slate-900"
+              />
+            </label>
+          </div>
+
+          <label className="block space-y-1 text-xs font-medium text-slate-700">
+            <span>{t('notes')}</span>
+            <textarea
+              rows={3}
+              value={notes}
               onChange={(e) => {
-                setTags(e.target.value);
+                setNotes(e.target.value);
                 markDirty();
               }}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm text-slate-900"
             />
           </label>
         </div>
 
-        <label className="block space-y-1 text-xs font-medium text-slate-700">
-          <span>{t('notes')}</span>
-          <textarea
-            rows={3}
-            value={notes}
-            onChange={(e) => {
-              setNotes(e.target.value);
-              markDirty();
-            }}
-            className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
-          />
-        </label>
-
-        <div className="flex items-center justify-between pt-2">
+        {/* Sticky/Bottom Action Bar */}
+        <div className="flex items-center justify-between pt-1">
           <div>
             {savedToast && (
               <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700">
@@ -960,7 +966,7 @@ export function DiveDetailPage({
           <button
             type="submit"
             disabled={saving || isOffline}
-            className="inline-flex items-center gap-2 rounded-lg bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 transition-colors cursor-pointer"
+            className="inline-flex items-center gap-2 rounded-lg bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-sm font-medium px-5 py-2.5 transition-colors cursor-pointer"
           >
             <Save className="w-4 h-4" />
             {isNewDraft ? t('saveDive') : t('saveChanges')}

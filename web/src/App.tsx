@@ -199,15 +199,18 @@ export function App() {
         {activeView === 'new-dive-choice' && (
           <NewDiveChoicePage
             onBack={() => setActiveView('logbook')}
-            onStartManual={() => {
-              setDraftFit(null);
-              setSelectedDiveId(null);
-              setActiveView('dive-detail');
-            }}
             onFitParsed={(parsedDraft) => {
               setDraftFit(parsedDraft);
               setSelectedDiveId(null);
               setActiveView('dive-detail');
+            }}
+            onManualDiveCreated={async (createdId, openDetails) => {
+              await loadInitialData();
+              if (openDetails) {
+                openDiveDetail(createdId);
+              } else {
+                setActiveView('logbook');
+              }
             }}
           />
         )}
