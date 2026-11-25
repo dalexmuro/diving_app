@@ -92,6 +92,8 @@ describe('Logbook search and multi-criteria filtering', () => {
       site_name: 'Blue Wall',
       buddy: 'Claire',
       dive_center: 'Med Plongée',
+      dive_mode: 'guided',
+      dive_types_json: '["boat","wreck"]',
       tags_json: '["wreck","deep"]',
       visibility: 'good',
       buoyancy: 'good',
@@ -129,6 +131,8 @@ describe('Logbook search and multi-criteria filtering', () => {
       site_name: 'North Drop',
       buddy: 'Marc',
       dive_center: 'Ocean Club',
+      dive_mode: 'autonomous',
+      dive_types_json: '["shore","night"]',
       tags_json: '["drift"]',
       visibility: 'excellent',
       buoyancy: 'excellent',
@@ -145,8 +149,24 @@ describe('Logbook search and multi-criteria filtering', () => {
     ).toHaveLength(1);
 
     expect(
-      filterDives(sampleDives, { query: '', year: '2025', gas: 'nitrox', depthBand: 'deep' }),
+      filterDives(sampleDives, { query: '', year: '2025', gas: 'nitrox', depthBand: 'medium' }),
     ).toHaveLength(1);
+
+    expect(
+      filterDives(sampleDives, {
+        query: '',
+        year: 'all',
+        gas: 'all',
+        depthBand: 'shallow',
+        mode: 'guided',
+        entryType: 'boat',
+        explorationType: 'wreck',
+      }),
+    ).toHaveLength(1);
+
+    expect(
+      filterDives(sampleDives, { query: '', year: 'all', gas: 'all', depthBand: 'deep' }),
+    ).toHaveLength(0);
 
     expect(
       filterDives(sampleDives, { query: 'claire', year: '2025', gas: 'all', depthBand: 'all' }),

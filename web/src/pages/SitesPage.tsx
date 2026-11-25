@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
+  Globe,
   MapPin,
   Pencil,
   Plus,
@@ -28,6 +29,7 @@ export function SitesPage({ isOffline, dives, onSelectDive }: SitesPageProps) {
   const { language, unitSystem, t } = usePreferences();
   const [sites, setSites] = useState<DiveSite[]>([]);
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
   const [expandedSiteId, setExpandedSiteId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -45,7 +47,10 @@ export function SitesPage({ isOffline, dives, onSelectDive }: SitesPageProps) {
   const formRef = useRef<HTMLFormElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
+  const siteMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const draftMarkerRef = useRef<L.Marker | null>(null);
+  const hasFitBoundsRef = useRef(false);
+  const siteRowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   useEffect(() => () => searchAbortRef.current?.abort(), []);
 
@@ -62,6 +67,16 @@ export function SitesPage({ isOffline, dives, onSelectDive }: SitesPageProps) {
     }, 450);
     return () => window.clearTimeout(timer);
   }, [searchQuery, isOffline]);
+
+  function createSiteDotIcon() {
+    return L.divIcon({
+      className: '',
+      iconSize: [14, 14],
+      iconAnchor: [7, 7],
+      popupAnchor: [0, -8],
+      html: `<span style="display:block;width:14px;height:14px;border-radius:9999px;background:#0284c7;border:2px solid #0b192c;box-shadow:0 1px 3px rgba(15,23,42,0.35);"></span>`,
+    });
+  }
 
   function createPinIcon() {
     return L.divIcon({
@@ -119,6 +134,7 @@ export function SitesPage({ isOffline, dives, onSelectDive }: SitesPageProps) {
   }
 
   function handleSelectSearchResult(r: GeocodingResult) {
+    setShowForm(true);
     setLat(String(r.latitude));
     setLng(String(r.longitude));
     const parts = r.displayName
@@ -154,6 +170,7 @@ export function SitesPage({ isOffline, dives, onSelectDive }: SitesPageProps) {
     map.on('click', (ev: L.LeafletMouseEvent) => {
       const nextLat = Number(ev.latlng.lat.toFixed(5));
       const nextLng = Number(ev.latlng.lng.toFixed(5));
+      setShowForm(true);
       setLat(String(nextLat));
       setLng(String(nextLng));
       updateDraftPin(nextLat, nextLng, false);
@@ -173,11 +190,29 @@ export function SitesPage({ isOffline, dives, onSelectDive }: SitesPageProps) {
       ro?.disconnect();
       draftMarkerRef.current?.remove();
       draftMarkerRef.current = null;
+      hasFitBoundsRef.current = false;
       map.remove();
       mapRef.current = null;
       markersLayerRef.current = null;
     };
   }, [isOffline]);
+
+  function focusSiteInList(siteId: string) {
+    setExpandedSiteId(siteId);
+    window.requestAnimationFrame(() => {
+      const row = siteRowRefs.current.get(siteId);
+      row?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
+  function resetMapBounds() {
+    const map = mapRef.current;
+    if (!map) return;
+    const withCoords = sites.filter((s) => s.latitude != null && s.longitude != null);
+    if (withCoords.length === 0) return;
+    const bounds = L.latLngBounds(withCoords.map((s) => [s.latitude!, s.longitude!]));
+    map.flyToBounds(bounds, { padding: [32, 32], maxZoom: 12, duration: 0.6 });
+  }
 
   // Render crisp circle markers for sites with GPS coordinates
   useEffect(() => {
@@ -186,23 +221,54 @@ export function SitesPage({ isOffline, dives, onSelectDive }: SitesPageProps) {
     if (!group || !map) return;
 
     group.clearLayers();
+    siteMarkersRef.current.clear();
     const withCoords = sites.filter((s) => s.latitude != null && s.longitude != null);
     for (const s of withCoords) {
-      L.circleMarker([s.latitude!, s.longitude!], {
-        radius: 7,
-        color: '#0b192c',
-        weight: 2,
-        fillColor: '#0284c7',
-        fillOpacity: 0.9,
+      const popupBtn = document.createElement('button');
+      popupBtn.type = 'button';
+      popupBtn.className = 'text-left block w-full cursor-pointer space-y-0.5';
+
+      const titleEl = document.createElement('div');
+      titleEl.className = 'font-semibold text-slate-900 text-xs leading-snug';
+      titleEl.textContent = s.name;
+      popupBtn.appendChild(titleEl);
+
+      const countEl = document.createElement('div');
+      countEl.className = 'text-[11px] text-slate-600';
+      countEl.textContent = `${t('sitePopupDives')}: ${s.dive_count ?? 0}`;
+      popupBtn.appendChild(countEl);
+
+      const ctaEl = document.createElement('div');
+      ctaEl.className = 'text-[11px] font-medium text-sky-600 pt-0.5';
+      ctaEl.textContent = t('sitePopupViewDives');
+      popupBtn.appendChild(ctaEl);
+
+      popupBtn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        focusSiteInList(s.id);
+      });
+
+      const marker = L.marker([s.latitude!, s.longitude!], {
+        icon: createSiteDotIcon(),
       })
-        .bindPopup(`<strong>${s.name}</strong><br/>Dives: ${s.dive_count ?? 0}`)
+        .bindPopup(popupBtn)
+        .on('click', (ev) => {
+          L.DomEvent.stopPropagation(ev);
+          const currentZoom = map.getZoom();
+          const targetZoom = currentZoom < 10 ? Math.min(currentZoom + 2, 10) : currentZoom;
+          map.setView([s.latitude!, s.longitude!], targetZoom, { animate: true, duration: 0.45 });
+        })
         .addTo(group);
+
+      siteMarkersRef.current.set(s.id, marker);
     }
-    if (withCoords.length > 0) {
+    if (withCoords.length > 0 && !hasFitBoundsRef.current) {
       const bounds = L.latLngBounds(withCoords.map((s) => [s.latitude!, s.longitude!]));
       map.fitBounds(bounds, { padding: [32, 32], maxZoom: 12 });
+      hasFitBoundsRef.current = true;
     }
-  }, [sites]);
+  }, [sites, language, t]);
 
   const divesBySiteId = useMemo(() => {
     const grouped = new Map<string, DiveSummary[]>();
@@ -234,7 +300,16 @@ export function SitesPage({ isOffline, dives, onSelectDive }: SitesPageProps) {
     setExpandedSiteId((prev) => {
       const next = prev === site.id ? null : site.id;
       if (next && !isOffline && site.latitude != null && site.longitude != null) {
-        mapRef.current?.flyTo([site.latitude, site.longitude], 13, { duration: 0.5 });
+        const map = mapRef.current;
+        if (map) {
+          const currentZoom = map.getZoom();
+          const targetZoom = currentZoom < 9 ? Math.min(currentZoom + 3, 9) : currentZoom;
+          map.setView([site.latitude, site.longitude], targetZoom, {
+            animate: true,
+            duration: 0.45,
+          });
+          siteMarkersRef.current.get(site.id)?.openPopup();
+        }
       }
       return next;
     });
@@ -242,6 +317,7 @@ export function SitesPage({ isOffline, dives, onSelectDive }: SitesPageProps) {
 
   function selectForEdit(site: DiveSite) {
     setSelectedSiteId(site.id);
+    setShowForm(true);
     setName(site.name);
     setCountry(site.country ?? '');
     setLat(site.latitude != null ? String(site.latitude) : '');
@@ -249,11 +325,11 @@ export function SitesPage({ isOffline, dives, onSelectDive }: SitesPageProps) {
     if (site.latitude != null && site.longitude != null) {
       updateDraftPin(site.latitude, site.longitude, true);
     }
-    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
   function resetForm() {
     setSelectedSiteId(null);
+    setShowForm(false);
     setName('');
     setCountry('');
     setLat('');
@@ -287,26 +363,41 @@ export function SitesPage({ isOffline, dives, onSelectDive }: SitesPageProps) {
   }
 
   return (
-    <section className="space-y-6">
-      <h1 className="text-[clamp(1.35rem,2.5vw,1.6rem)] font-semibold tracking-tight text-slate-900">
-        {t('navSites')}
-      </h1>
+    <section
+      className={
+        isOffline
+          ? 'space-y-4'
+          : 'flex flex-col gap-3 sm:gap-4 h-[calc(100dvh-9.25rem-var(--safe-top)-var(--safe-bottom))] sm:h-[calc(100dvh-6.75rem)] lg:h-[calc(100dvh-7.75rem)] overflow-hidden'
+      }
+    >
+      <div className="flex items-center justify-between gap-2 shrink-0">
+        <h1 className="text-[clamp(1.25rem,2.3vw,1.5rem)] font-semibold tracking-tight text-slate-900">
+          {t('navSites')}
+        </h1>
+        {!isOffline &&
+          (showForm || selectedSiteId ? (
+            <button
+              type="button"
+              onClick={resetForm}
+              className="text-xs font-medium text-slate-600 hover:text-slate-900 cursor-pointer"
+            >
+              {selectedSiteId ? `${t('editingLabel')} · ${t('cancel')}` : t('cancel')}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowForm(true)}
+              className="inline-flex items-center gap-1 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium px-3 py-1.5 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              {t('addSite')}
+            </button>
+          ))}
+      </div>
 
-      {/* Interactive Map (online) with automatic fallback when offline */}
+      {/* Fixed Interactive Map (online) with automatic fallback when offline */}
       {!isOffline && (
-        <div className="panel-surface p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-900">{t('siteMap')}</h2>
-            {selectedSiteId && (
-              <button
-                type="button"
-                onClick={resetForm}
-                className="text-xs font-medium text-slate-600 hover:text-slate-900 cursor-pointer"
-              >
-                {t('editingLabel')} · {t('cancel')}
-              </button>
-            )}
-          </div>
+        <div className="panel-surface p-3 sm:p-4 space-y-2.5 shrink-0">
           {/* Google Maps-style place search bar */}
           <div className="relative space-y-1.5">
             <div className="flex gap-2">
@@ -325,7 +416,7 @@ export function SitesPage({ isOffline, dives, onSelectDive }: SitesPageProps) {
                     }
                   }}
                   placeholder={t('searchLocationPlaceholder')}
-                  className="w-full pl-9 pr-8 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+                  className="w-full pl-9 pr-8 py-1.5 sm:py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
                 />
                 {searchQuery && (
                   <button
@@ -345,7 +436,7 @@ export function SitesPage({ isOffline, dives, onSelectDive }: SitesPageProps) {
                 type="button"
                 disabled={searching}
                 onClick={() => void handleMapSearch()}
-                className="rounded-lg bg-[#0b192c] hover:bg-slate-800 active:bg-slate-900 disabled:opacity-50 text-white text-xs font-medium px-4 py-2 cursor-pointer shrink-0"
+                className="rounded-lg bg-[#0b192c] hover:bg-slate-800 active:bg-slate-900 disabled:opacity-50 text-white text-xs font-medium px-3.5 py-1.5 sm:py-2 cursor-pointer shrink-0"
               >
                 {searching ? '...' : t('searchLocationBtn')}
               </button>
@@ -372,77 +463,110 @@ export function SitesPage({ isOffline, dives, onSelectDive }: SitesPageProps) {
             )}
           </div>
 
-          <div
-            ref={mapContainerRef}
-            className="w-full h-[clamp(220px,42dvh,420px)] rounded-lg overflow-hidden z-0"
-          />
+          <div className="relative">
+            <div
+              ref={mapContainerRef}
+              className="w-full h-[clamp(180px,34dvh,340px)] rounded-lg overflow-hidden z-0"
+            />
+            {sites.some((s) => s.latitude != null && s.longitude != null) && (
+              <button
+                type="button"
+                onClick={resetMapBounds}
+                title={t('resetMapView')}
+                aria-label={t('resetMapView')}
+                className="absolute top-2.5 right-2.5 z-[400] inline-flex items-center gap-1.5 rounded-lg bg-white/95 hover:bg-white border border-slate-300 shadow-sm px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 cursor-pointer"
+              >
+                <Globe className="w-3.5 h-3.5 text-sky-600" />
+                <span className="hidden sm:inline">{t('resetMapView')}</span>
+              </button>
+            )}
+          </div>
 
-          <form
-            ref={formRef}
-            onSubmit={(e) => void handleSaveSite(e)}
-            className="grid grid-cols-1 sm:grid-cols-5 gap-2.5 pt-2"
-          >
-            <input
-              type="text"
-              required
-              placeholder={t('siteName')}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
-            />
-            <input
-              type="text"
-              placeholder={t('country')}
-              value={country}
-              onChange={(e) => setCountry(e.target.value)}
-              className="px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
-            />
-            <input
-              type="number"
-              step="any"
-              placeholder="Lat"
-              value={lat}
-              onChange={(e) => setLat(e.target.value)}
-              className="px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
-            />
-            <input
-              type="number"
-              step="any"
-              placeholder="Lng"
-              value={lng}
-              onChange={(e) => setLng(e.target.value)}
-              className="px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
-            />
-            <button
-              type="submit"
-              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-sm font-medium px-3 py-2 cursor-pointer"
+          {(showForm || selectedSiteId) && (
+            <form
+              ref={formRef}
+              onSubmit={(e) => void handleSaveSite(e)}
+              className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1"
             >
-              <Plus className="w-4 h-4" />
-              {selectedSiteId ? t('saveChanges') : t('addSite')}
-            </button>
-          </form>
+              <input
+                type="text"
+                required
+                placeholder={t('siteName')}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="col-span-2 sm:col-span-1 px-3 py-1.5 rounded-lg border border-slate-300 text-sm text-slate-900"
+              />
+              <input
+                type="text"
+                placeholder={t('country')}
+                value={country}
+                onChange={(e) => setCountry(e.target.value)}
+                className="col-span-2 sm:col-span-1 px-3 py-1.5 rounded-lg border border-slate-300 text-sm text-slate-900"
+              />
+              <input
+                type="number"
+                step="any"
+                placeholder="Lat"
+                value={lat}
+                onChange={(e) => setLat(e.target.value)}
+                className="px-3 py-1.5 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
+              />
+              <input
+                type="number"
+                step="any"
+                placeholder="Lng"
+                value={lng}
+                onChange={(e) => setLng(e.target.value)}
+                className="px-3 py-1.5 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
+              />
+              <button
+                type="submit"
+                className="col-span-2 sm:col-span-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-sm font-medium px-3 py-1.5 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                {selectedSiteId ? t('saveChanges') : t('addSite')}
+              </button>
+            </form>
+          )}
         </div>
       )}
 
-      {/* Site Ranking (Always available online & offline) */}
-      <div className="panel-surface divide-y divide-slate-200 overflow-hidden">
-        <div className="px-4 py-3 bg-slate-50">
+      {/* Scrollable Site Ranking (Always available online & offline) */}
+      <div
+        className={`panel-surface overflow-hidden flex flex-col ${
+          isOffline ? '' : 'flex-1 min-h-0'
+        }`}
+      >
+        <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 shrink-0 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-900">{t('siteRanking')}</h2>
+          <span className="text-xs font-medium text-slate-500 tabular-telemetry">
+            {sites.length}
+          </span>
         </div>
-        {sites.length === 0 ? (
-          <div className="p-6 text-center text-sm text-slate-600">{t('noDivesYet')}</div>
-        ) : (
-          sites.map((site) => {
-            const isExpanded = expandedSiteId === site.id;
-            const siteDives = divesBySiteId.get(site.id) ?? [];
+        <div className={`divide-y divide-slate-200 ${isOffline ? '' : 'flex-1 min-h-0 overflow-y-auto'}`}>
+          {sites.length === 0 ? (
+            <div className="p-6 text-center text-sm text-slate-600">{t('noDivesYet')}</div>
+          ) : (
+            sites.map((site) => {
+              const isExpanded = expandedSiteId === site.id;
+              const siteDives = divesBySiteId.get(site.id) ?? [];
 
-            return (
-              <div key={site.id}>
+              return (
                 <div
-                  className={`px-4 py-3.5 transition-colors flex items-center justify-between gap-3 ${
-                    isExpanded ? 'bg-sky-50/60' : 'hover:bg-slate-50'
-                  }`}
+                  key={site.id}
+                  ref={(el) => {
+                    if (el) {
+                      siteRowRefs.current.set(site.id, el);
+                    } else {
+                      siteRowRefs.current.delete(site.id);
+                    }
+                  }}
                 >
+                  <div
+                    className={`px-4 py-3 transition-colors flex items-center justify-between gap-3 ${
+                      isExpanded ? 'bg-sky-50/70' : 'hover:bg-slate-50'
+                    }`}
+                  >
                   <button
                     type="button"
                     aria-expanded={isExpanded}
@@ -578,6 +702,7 @@ export function SitesPage({ isOffline, dives, onSelectDive }: SitesPageProps) {
             );
           })
         )}
+        </div>
       </div>
     </section>
   );

@@ -506,6 +506,10 @@ export function DiveDetailPage({
       ? 'shore'
       : '';
 
+  const explorationLabels = diveTypes
+    .filter((x) => x !== 'shore' && x !== 'boat')
+    .map((id) => additionalTypeOptions.find((o) => o.id === id)?.label ?? id);
+
   function setEntryType(next: '' | 'shore' | 'boat') {
     setDiveTypes((prev) => {
       const withoutEntry = prev.filter((x) => x !== 'shore' && x !== 'boat');
@@ -514,8 +518,17 @@ export function DiveDetailPage({
     markDirty();
   }
 
-  function toggleDiveType(id: string) {
-    setDiveTypes((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  function handleExplorationChange(nextLabels: string[]) {
+    const mapped = nextLabels.map((lbl) => {
+      const match = additionalTypeOptions.find(
+        (o) => o.label.toLowerCase() === lbl.trim().toLowerCase(),
+      );
+      return match ? match.id : lbl.trim();
+    });
+    setDiveTypes((prev) => {
+      const entryOnly = prev.filter((x) => x === 'shore' || x === 'boat');
+      return [...entryOnly, ...mapped];
+    });
     markDirty();
   }
 
@@ -654,7 +667,8 @@ export function DiveDetailPage({
             <h2 className="text-sm font-semibold text-slate-900">{t('sectionBasicInfo')}</h2>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {/* Row 1: Dive #, Date, Start Time, End Time, Duration */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
             <label className="space-y-1 text-xs font-medium text-slate-700">
               <span>{t('logNumber')}</span>
               <input
@@ -670,22 +684,6 @@ export function DiveDetailPage({
                 }}
                 className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm tabular-telemetry text-slate-900"
               />
-            </label>
-            <label className="space-y-1 text-xs font-medium text-slate-700">
-              <span>{t('diveMode')}</span>
-              <select
-                value={diveMode}
-                onChange={(e) => {
-                  setDiveMode(e.target.value as DiveMode | '');
-                  markDirty();
-                }}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
-              >
-                <option value="">—</option>
-                <option value="guided">{t('modeGuided')}</option>
-                <option value="autonomous">{t('modeAutonomous')}</option>
-                <option value="training">{t('modeTraining')}</option>
-              </select>
             </label>
             <label className="space-y-1 text-xs font-medium text-slate-700">
               <span>{t('dateLabel')}</span>
@@ -739,7 +737,52 @@ export function DiveDetailPage({
                 className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm tabular-telemetry text-slate-900"
               />
             </label>
+          </div>
 
+          {/* Row 2: Modality, Entry Type, Exploration Type (editable list) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-start">
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('diveMode')}</span>
+              <select
+                value={diveMode}
+                onChange={(e) => {
+                  setDiveMode(e.target.value as DiveMode | '');
+                  markDirty();
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+              >
+                <option value="">—</option>
+                <option value="guided">{t('modeGuided')}</option>
+                <option value="autonomous">{t('modeAutonomous')}</option>
+                <option value="training">{t('modeTraining')}</option>
+              </select>
+            </label>
+
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              <span>{t('diveEntryTitle')}</span>
+              <select
+                value={entryType}
+                onChange={(e) => setEntryType(e.target.value as '' | 'shore' | 'boat')}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+              >
+                <option value="">—</option>
+                <option value="shore">{t('diveTypeShore')}</option>
+                <option value="boat">{t('diveTypeBoat')}</option>
+              </select>
+            </label>
+
+            <SmartMultiSelect
+              label={t('diveTypesTitle')}
+              values={explorationLabels}
+              options={additionalTypeOptions.map((o) => o.label)}
+              placeholder={t('selectOrType')}
+              addLabel={t('addOption')}
+              onChange={handleExplorationChange}
+            />
+          </div>
+
+          {/* Row 3: Max Depth, Avg Depth, Min Temp, Avg Temp */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <label className="space-y-1 text-xs font-medium text-slate-700">
               <span>{t('maxDepth')} (m)</span>
               <input
@@ -797,93 +840,8 @@ export function DiveDetailPage({
             </label>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pt-1">
-            <SmartSelect
-              label={t('computerUsed')}
-              value={computerName}
-              options={computersCatalog.map((c) => c.name)}
-              placeholder={t('selectOrType')}
-              onChange={(val) => {
-                setComputerName(val);
-                markDirty();
-              }}
-            />
-
-            <SmartMultiSelect
-              label={t('buddy')}
-              values={buddies}
-              options={buddiesCatalog.map((b) => b.name)}
-              placeholder={t('selectOrType')}
-              addLabel={t('addOption')}
-              onChange={(vals) => {
-                setBuddies(vals);
-                markDirty();
-              }}
-            />
-
-            <SmartMultiSelect
-              label={t('gearUsed')}
-              values={gearUsed}
-              options={gearCatalog.map((g) => g.name)}
-              placeholder={t('selectOrType')}
-              addLabel={t('addOption')}
-              onChange={(vals) => {
-                setGearUsed(vals);
-                markDirty();
-              }}
-            />
-          </div>
-
-          {/* Departure (Du bord / En bateau) + Additional Dive Types (Grotte, Épave, Photo/Bio, Nocturne) */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-slate-100 items-start">
-            <label className="space-y-1 text-xs font-medium text-slate-700">
-              <span>{t('diveEntryTitle')}</span>
-              <select
-                value={entryType}
-                onChange={(e) => setEntryType(e.target.value as '' | 'shore' | 'boat')}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
-              >
-                <option value="">—</option>
-                <option value="shore">{t('diveTypeShore')}</option>
-                <option value="boat">{t('diveTypeBoat')}</option>
-              </select>
-            </label>
-
-            <div className="sm:col-span-2 space-y-1.5">
-              <span className="block text-xs font-medium text-slate-700">{t('diveTypesTitle')}</span>
-              <div className="flex flex-wrap gap-2">
-                {additionalTypeOptions.map((opt) => {
-                  const selected = diveTypes.includes(opt.id);
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      aria-pressed={selected}
-                      onClick={() => toggleDiveType(opt.id)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors cursor-pointer ${
-                        selected
-                          ? 'bg-sky-600 border-sky-600 text-white'
-                          : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 active:bg-slate-100'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* SECTION 3: Complementary Information */}
-        <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-5 space-y-5">
-          <div className="flex items-center gap-2 border-b border-slate-200 pb-2.5">
-            <SlidersHorizontal className="w-4 h-4 text-slate-600" />
-            <h2 className="text-sm font-semibold text-slate-900">{t('sectionExtraInfo')}</h2>
-          </div>
-
           {/* Paliers / Deco Stops */}
-          <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+          <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-4 space-y-3">
             <h3 className="text-sm font-semibold text-slate-900">{t('decoStopsTitle')}</h3>
 
             {decoStops.length === 0 ? (
@@ -946,6 +904,52 @@ export function DiveDetailPage({
                 <span>{t('addDecoStop')}</span>
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* SECTION 3: Complementary Information */}
+        <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-5 space-y-5">
+          <div className="flex items-center gap-2 border-b border-slate-200 pb-2.5">
+            <SlidersHorizontal className="w-4 h-4 text-slate-600" />
+            <h2 className="text-sm font-semibold text-slate-900">{t('sectionExtraInfo')}</h2>
+          </div>
+
+          {/* Computer, Buddies & Gear */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <SmartSelect
+              label={t('computerUsed')}
+              value={computerName}
+              options={computersCatalog.map((c) => c.name)}
+              placeholder={t('selectOrType')}
+              onChange={(val) => {
+                setComputerName(val);
+                markDirty();
+              }}
+            />
+
+            <SmartMultiSelect
+              label={t('buddy')}
+              values={buddies}
+              options={buddiesCatalog.map((b) => b.name)}
+              placeholder={t('selectOrType')}
+              addLabel={t('addOption')}
+              onChange={(vals) => {
+                setBuddies(vals);
+                markDirty();
+              }}
+            />
+
+            <SmartMultiSelect
+              label={t('gearUsed')}
+              values={gearUsed}
+              options={gearCatalog.map((g) => g.name)}
+              placeholder={t('selectOrType')}
+              addLabel={t('addOption')}
+              onChange={(vals) => {
+                setGearUsed(vals);
+                markDirty();
+              }}
+            />
           </div>
 
           {/* Sub-block: Tank, Pressures & Gas */}

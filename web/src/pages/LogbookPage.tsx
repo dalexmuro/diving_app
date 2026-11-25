@@ -1,13 +1,15 @@
-import { ChevronRight, Plus, RotateCcw, Search, SlidersHorizontal } from 'lucide-react';
+import { ArrowRight, Compass, Plus, RotateCcw, Search, SlidersHorizontal } from 'lucide-react';
 import { useDeferredValue, useMemo, useState } from 'react';
 import { usePreferences } from '../i18n/I18nContext';
 import {
   type DepthBandFilter,
+  type EntryTypeFilter,
   extractAvailableYears,
+  extractCustomExplorationTypes,
   filterDives,
 } from '../services/logbookFilter';
-import { formatDepth, formatDuration, formatTemp } from '../services/units';
-import { type DiveSummary, type GasType } from '../types/domain';
+import { formatDepth, formatDuration } from '../services/units';
+import { type DiveMode, type DiveSummary, type GasType } from '../types/domain';
 
 interface LogbookPageProps {
   dives: DiveSummary[];
@@ -28,25 +30,43 @@ export function LogbookPage({
   const [year, setYear] = useState('all');
   const [gas, setGas] = useState<'all' | GasType>('all');
   const [depthBand, setDepthBand] = useState<DepthBandFilter>('all');
-  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [mode, setMode] = useState<'all' | DiveMode>('all');
+  const [entryType, setEntryType] = useState<EntryTypeFilter>('all');
+  const [explorationType, setExplorationType] = useState<'all' | string>('all');
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const years = useMemo(() => extractAvailableYears(dives), [dives]);
+  const customExplorationTypes = useMemo(() => extractCustomExplorationTypes(dives), [dives]);
   const filtered = useMemo(
-    () => filterDives(dives, { query: deferredQuery, year, gas, depthBand }),
-    [dives, deferredQuery, year, gas, depthBand],
+    () =>
+      filterDives(dives, {
+        query: deferredQuery,
+        year,
+        gas,
+        depthBand,
+        mode,
+        entryType,
+        explorationType,
+      }),
+    [dives, deferredQuery, year, gas, depthBand, mode, entryType, explorationType],
   );
 
-  // Cache Intl.DateTimeFormat instances per language (avoids 2 allocations per dive row per render)
+  // Cache Intl.DateTimeFormat instances per language
   const formatters = useMemo(() => {
     const locale = language === 'fr' ? 'fr-FR' : 'es-ES';
     return {
-      date: new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'short', day: '2-digit' }),
+      date: new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'long', day: 'numeric' }),
       time: new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }),
     };
   }, [language]);
 
   const activeFilterCount =
-    (year !== 'all' ? 1 : 0) + (gas !== 'all' ? 1 : 0) + (depthBand !== 'all' ? 1 : 0);
+    (year !== 'all' ? 1 : 0) +
+    (gas !== 'all' ? 1 : 0) +
+    (depthBand !== 'all' ? 1 : 0) +
+    (mode !== 'all' ? 1 : 0) +
+    (entryType !== 'all' ? 1 : 0) +
+    (explorationType !== 'all' ? 1 : 0);
   const hasAnyFilter = activeFilterCount > 0 || query.trim().length > 0;
 
   function clearAllFilters() {
@@ -54,14 +74,23 @@ export function LogbookPage({
     setYear('all');
     setGas('all');
     setDepthBand('all');
+    setMode('all');
+    setEntryType('all');
+    setExplorationType('all');
   }
 
   return (
-    <section className="space-y-4 sm:space-y-5">
+    <section className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-[clamp(1.35rem,2.5vw,1.6rem)] font-semibold tracking-tight text-slate-900">
-          {t('navLogbook')}
-        </h1>
+        <div className="flex items-baseline gap-3">
+          <h1 className="text-[clamp(1.35rem,2.5vw,1.6rem)] font-semibold tracking-tight text-slate-900">
+            {t('navLogbook')}
+          </h1>
+          <span className="text-xs sm:text-sm font-medium text-slate-500 tabular-telemetry">
+            {filtered.length}{' '}
+            {filtered.length === 1 ? t('diveCountSingular') : t('diveCountPlural')}
+          </span>
+        </div>
         {!isOffline && (
           <button
             type="button"
@@ -74,7 +103,7 @@ export function LogbookPage({
         )}
       </div>
 
-      {/* Search & Filters (compact collapsible drawer on mobile so dives stay above the fold) */}
+      {/* Search & Collapsible Multi-Filter Panel */}
       <div className="panel-surface p-3.5 sm:p-4 space-y-3">
         <div className="flex items-center gap-2">
           <div className="relative flex-1 min-w-0">
@@ -90,18 +119,18 @@ export function LogbookPage({
 
           <button
             type="button"
-            aria-expanded={mobileFiltersOpen}
-            onClick={() => setMobileFiltersOpen((prev) => !prev)}
-            className={`sm:hidden inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium cursor-pointer shrink-0 ${
-              activeFilterCount > 0 || mobileFiltersOpen
+            aria-expanded={filtersOpen}
+            onClick={() => setFiltersOpen((prev) => !prev)}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border text-xs sm:text-sm font-medium transition-colors cursor-pointer shrink-0 ${
+              activeFilterCount > 0 || filtersOpen
                 ? 'border-sky-300 bg-sky-50 text-sky-800'
-                : 'border-slate-300 bg-white text-slate-700'
+                : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-700'
             }`}
           >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span>{t('filtersToggle')}</span>
+            <SlidersHorizontal className="w-4 h-4" />
+            <span>{t('filterBtn')}</span>
             {activeFilterCount > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full bg-sky-600 text-white text-[10px] tabular-telemetry">
+              <span className="px-1.5 py-0.5 rounded-full bg-sky-600 text-white text-[10px] font-semibold tabular-telemetry">
                 {activeFilterCount}
               </span>
             )}
@@ -111,71 +140,113 @@ export function LogbookPage({
             <button
               type="button"
               onClick={clearAllFilters}
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium cursor-pointer shrink-0"
+              title={t('clearFilters')}
+              aria-label={t('clearFilters')}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium cursor-pointer shrink-0"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>{t('clearFilters')}</span>
+              <span className="hidden sm:inline">{t('clearFilters')}</span>
             </button>
           )}
         </div>
 
-        <div
-          className={`${
-            mobileFiltersOpen ? 'grid' : 'hidden sm:grid'
-          } grid-cols-1 sm:grid-cols-3 gap-2.5`}
-        >
-          <select
-            value={year}
-            onChange={(e) => setYear(e.target.value)}
-            aria-label={t('allYears')}
-            className="px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
-          >
-            <option value="all">{t('allYears')}</option>
-            {years.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
+        {filtersOpen && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2 border-t border-slate-200/80">
+            <label className="space-y-1 text-xs font-medium text-slate-600">
+              <span>{t('depth')}</span>
+              <select
+                value={depthBand}
+                onChange={(e) => setDepthBand(e.target.value as DepthBandFilter)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+              >
+                <option value="all">{t('depthAll')}</option>
+                <option value="shallow">≤ 20 m</option>
+                <option value="medium">20 – 40 m</option>
+                <option value="deep">&gt; 40 m</option>
+              </select>
+            </label>
 
-          <select
-            value={gas}
-            onChange={(e) => setGas(e.target.value as 'all' | GasType)}
-            aria-label={t('allGases')}
-            className="px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
-          >
-            <option value="all">{t('allGases')}</option>
-            <option value="air">{t('gasAir')}</option>
-            <option value="nitrox">{t('gasNitrox')}</option>
-            <option value="trimix">{t('gasTrimix')}</option>
-          </select>
+            <label className="space-y-1 text-xs font-medium text-slate-600">
+              <span>{t('diveMode')}</span>
+              <select
+                value={mode}
+                onChange={(e) => setMode(e.target.value as 'all' | DiveMode)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+              >
+                <option value="all">{t('allModes')}</option>
+                <option value="guided">{t('modeGuided')}</option>
+                <option value="autonomous">{t('modeAutonomous')}</option>
+                <option value="training">{t('modeTraining')}</option>
+              </select>
+            </label>
 
-          <select
-            value={depthBand}
-            onChange={(e) => setDepthBand(e.target.value as DepthBandFilter)}
-            aria-label={t('depth')}
-            className="px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
-          >
-            <option value="all">{t('depthAll')}</option>
-            <option value="shallow">≤ 18 m</option>
-            <option value="medium">18 – 30 m</option>
-            <option value="deep">&gt; 30 m</option>
-          </select>
+            <label className="space-y-1 text-xs font-medium text-slate-600">
+              <span>{t('diveEntryTitle')}</span>
+              <select
+                value={entryType}
+                onChange={(e) => setEntryType(e.target.value as EntryTypeFilter)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+              >
+                <option value="all">{t('allEntries')}</option>
+                <option value="shore">{t('diveTypeShore')}</option>
+                <option value="boat">{t('diveTypeBoat')}</option>
+              </select>
+            </label>
 
-          {hasAnyFilter && (
-            <button
-              type="button"
-              onClick={clearAllFilters}
-              className="sm:hidden inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-slate-700 text-xs font-medium cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>{t('clearFilters')}</span>
-            </button>
-          )}
-        </div>
+            <label className="space-y-1 text-xs font-medium text-slate-600">
+              <span>{t('diveTypesTitle')}</span>
+              <select
+                value={explorationType}
+                onChange={(e) => setExplorationType(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+              >
+                <option value="all">{t('allExplorationTypes')}</option>
+                <option value="cave">{t('diveTypeCave')}</option>
+                <option value="wreck">{t('diveTypeWreck')}</option>
+                <option value="photo_bio">{t('diveTypePhotoBio')}</option>
+                <option value="night">{t('diveTypeNight')}</option>
+                {customExplorationTypes.map((ct) => (
+                  <option key={ct} value={ct}>
+                    {ct}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-1 text-xs font-medium text-slate-600">
+              <span>{t('allYears')}</span>
+              <select
+                value={year}
+                onChange={(e) => setYear(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+              >
+                <option value="all">{t('allYears')}</option>
+                {years.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-1 text-xs font-medium text-slate-600">
+              <span>{t('allGases')}</span>
+              <select
+                value={gas}
+                onChange={(e) => setGas(e.target.value as 'all' | GasType)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+              >
+                <option value="all">{t('allGases')}</option>
+                <option value="air">{t('gasAir')}</option>
+                <option value="nitrox">{t('gasNitrox')}</option>
+                <option value="trimix">{t('gasTrimix')}</option>
+              </select>
+            </label>
+          </div>
+        )}
       </div>
 
-      {/* Dive List */}
+      {/* FFESSM-Inspired Airy Dive Cards */}
       {filtered.length === 0 ? (
         <div className="panel-surface p-8 text-center space-y-3">
           <p className="text-sm text-slate-600">
@@ -193,7 +264,7 @@ export function LogbookPage({
           )}
         </div>
       ) : (
-        <div className="panel-surface divide-y divide-slate-200 overflow-hidden">
+        <div className="space-y-3.5 sm:space-y-4">
           {filtered.map((dive) => {
             const d = new Date(dive.started_at);
             const dateStr = formatters.date.format(d);
@@ -202,42 +273,53 @@ export function LogbookPage({
               <button
                 key={dive.id}
                 type="button"
+                aria-label={`${t('openDiveAria')} ${dive.site_name || ''}`.trim()}
                 onClick={() => onSelectDive(dive.id)}
-                className="logbook-row w-full text-left px-4 py-3.5 hover:bg-slate-50 active:bg-slate-100/80 transition-colors flex items-center justify-between gap-3 sm:gap-4 cursor-pointer"
+                className="logbook-row group w-full text-left rounded-2xl border border-slate-200/90 bg-white px-5 py-4 sm:px-6 sm:py-5 shadow-[0_1px_3px_rgba(15,23,42,0.04)] hover:shadow-md hover:border-sky-300/80 active:bg-slate-50/70 transition-all flex items-center justify-between gap-4 cursor-pointer"
               >
-                <div className="min-w-0 space-y-1">
-                  <div className="flex items-center gap-2">
-                    {dive.log_number != null && (
-                      <span className="px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-[11px] font-semibold text-sky-800 tabular-telemetry shrink-0">
-                        #{dive.log_number}
-                      </span>
-                    )}
-                    <span className="font-semibold text-sm text-slate-900 truncate">
-                      {dive.site_name || '—'}
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-700 uppercase shrink-0">
-                      {dive.gas_type} {dive.o2_pct}%
-                    </span>
+                <div className="flex items-start gap-4 min-w-0">
+                  <div className="hidden sm:flex w-10 h-10 rounded-full bg-[#0b192c] text-white items-center justify-center shrink-0 mt-0.5">
+                    <Compass className="w-5 h-5 text-sky-300" />
                   </div>
-                  <p className="text-xs text-slate-500 tabular-telemetry truncate">
-                    {dateStr} · {timeStr}
-                    {dive.computer_name ? ` · ${dive.computer_name}` : ''}
-                    {dive.buddy ? ` · ${dive.buddy}` : ''}
-                  </p>
+
+                  <div className="min-w-0 space-y-2">
+                    {dive.log_number != null && (
+                      <p className="text-xs font-medium text-slate-500 tabular-telemetry">
+                        N° {dive.log_number}
+                      </p>
+                    )}
+
+                    <h2 className="text-base sm:text-lg font-semibold text-slate-900 leading-snug truncate">
+                      {dive.site_name || '—'}
+                    </h2>
+
+                    <div className="inline-flex items-center rounded-md bg-sky-100/85 px-2.5 py-1 text-xs sm:text-[13px] font-medium text-sky-950 tabular-telemetry">
+                      {dateStr} · {timeStr}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs sm:text-sm text-slate-700 tabular-telemetry pt-0.5">
+                      <span>
+                        <span className="text-slate-500">{t('totalDiveTime')}: </span>
+                        <span className="font-semibold text-slate-900">
+                          {formatDuration(dive.duration_s)}
+                        </span>
+                      </span>
+                      <span>
+                        <span className="text-slate-500">{t('maxDepth')}: </span>
+                        <span className="font-semibold text-slate-900">
+                          {formatDepth(dive.max_depth_m, unitSystem)}
+                        </span>
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-3 sm:gap-5 shrink-0">
-                  <div className="text-right">
-                    <p className="text-sm font-semibold text-slate-900 tabular-telemetry">
-                      {formatDepth(dive.max_depth_m, unitSystem)}
-                    </p>
-                    <p className="text-xs text-slate-500 tabular-telemetry">
-                      {formatDuration(dive.duration_s)} ·{' '}
-                      {formatTemp(dive.avg_temp_c ?? dive.min_temp_c, unitSystem)}
-                    </p>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-slate-400" />
-                </div>
+                <span
+                  aria-hidden="true"
+                  className="w-10 h-10 rounded-xl bg-teal-400/90 group-hover:bg-teal-400 group-hover:translate-x-0.5 text-slate-900 flex items-center justify-center shadow-xs transition-all shrink-0"
+                >
+                  <ArrowRight className="w-4 h-4" />
+                </span>
               </button>
             );
           })}
