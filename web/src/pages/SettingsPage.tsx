@@ -43,6 +43,7 @@ export function SettingsPage({
   }, [isOffline]);
 
   async function handleSyncSuunto() {
+    if (!suuntoConnected || syncing) return;
     setSyncing(true);
     setStatusMessage(null);
     try {
@@ -168,8 +169,9 @@ export function SettingsPage({
             <button
               type="button"
               disabled={!suuntoConnected || syncing}
+              aria-disabled={!suuntoConnected || syncing}
               onClick={() => void handleSyncSuunto()}
-              className="inline-flex items-center gap-2 rounded-lg bg-sky-600 hover:bg-sky-700 active:bg-sky-800 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2.5 transition-colors cursor-pointer"
+              className="inline-flex items-center gap-2 rounded-lg bg-sky-600 hover:bg-sky-700 active:bg-sky-800 disabled:bg-slate-200 disabled:text-slate-400 disabled:hover:bg-slate-200 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2.5 transition-colors cursor-pointer"
             >
               <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
               {syncing ? t('syncing') : t('syncNow')}

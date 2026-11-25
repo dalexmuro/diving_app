@@ -1,4 +1,14 @@
-import { ArrowRight, Compass, Plus } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowRight,
+  Clock,
+  Compass,
+  Gauge,
+  Plus,
+  Timer,
+  Waves,
+  Wind,
+} from 'lucide-react';
 import { DashboardCharts } from '../components/DashboardCharts';
 import { usePreferences } from '../i18n/I18nContext';
 import { formatDepth, formatDuration, formatSac, formatTemp } from '../services/units';
@@ -42,47 +52,77 @@ export function DashboardPage({
 
       {/* Hero Anchor Metrics (2 primary metrics with clear typographic hierarchy) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="panel-surface p-5 border-l-4 border-l-sky-600 space-y-1">
-          <p className="text-xs font-medium text-slate-500">{t('totalDives')}</p>
-          <p className="text-[clamp(1.75rem,4vw,2.25rem)] font-semibold tabular-telemetry tracking-tight text-slate-900">
+        <div className="panel-surface p-5 border-l-4 border-l-sky-600 space-y-2">
+          <div className="flex items-center gap-2.5">
+            <span className="p-1.5 rounded-lg bg-sky-100 text-sky-700 inline-flex items-center justify-center">
+              <Waves className="w-4 h-4 sm:w-5 sm:h-5" />
+            </span>
+            <p className="text-sm sm:text-base font-bold text-slate-800">{t('totalDives')}</p>
+          </div>
+          <p className="text-[clamp(1.75rem,4vw,2.25rem)] font-bold tabular-telemetry tracking-tight text-slate-900">
             {stats?.totalDives ?? dives.length}
           </p>
         </div>
 
-        <div className="panel-surface p-5 border-l-4 border-l-[#0b192c] space-y-1">
-          <p className="text-xs font-medium text-slate-500">{t('underwaterTime')}</p>
-          <p className="text-[clamp(1.75rem,4vw,2.25rem)] font-semibold tabular-telemetry tracking-tight text-slate-900">
+        <div className="panel-surface p-5 border-l-4 border-l-[#0b192c] space-y-2">
+          <div className="flex items-center gap-2.5">
+            <span className="p-1.5 rounded-lg bg-slate-200/80 text-[#0b192c] inline-flex items-center justify-center">
+              <Clock className="w-4 h-4 sm:w-5 sm:h-5" />
+            </span>
+            <p className="text-sm sm:text-base font-bold text-slate-800">{t('underwaterTime')}</p>
+          </div>
+          <p className="text-[clamp(1.75rem,4vw,2.25rem)] font-bold tabular-telemetry tracking-tight text-slate-900">
             {formatDuration(stats?.totalDurationS ?? 0)}
           </p>
         </div>
       </div>
 
       {/* Secondary Telemetry Metrics (fluid grid adapting to phones, foldables & desktop) */}
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,150px),1fr))] gap-3.5">
-        <div className="panel-surface p-4 space-y-1">
-          <p className="text-xs font-medium text-slate-500">{t('maxDepth')}</p>
-          <p className="text-xl font-semibold tabular-telemetry text-slate-900">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,170px),1fr))] gap-3.5">
+        <div className="panel-surface p-4 space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="p-1.5 rounded-lg bg-sky-50 text-sky-700 inline-flex items-center justify-center">
+              <ArrowDown className="w-4 h-4" />
+            </span>
+            <p className="text-xs sm:text-sm font-semibold text-slate-700">{t('maxDepth')}</p>
+          </div>
+          <p className="text-xl sm:text-2xl font-bold tabular-telemetry text-slate-900">
             {formatDepth(stats?.maxDepthM ?? null, unitSystem)}
           </p>
         </div>
 
-        <div className="panel-surface p-4 space-y-1">
-          <p className="text-xs font-medium text-slate-500">{t('avgDepth')}</p>
-          <p className="text-xl font-semibold tabular-telemetry text-slate-900">
+        <div className="panel-surface p-4 space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="p-1.5 rounded-lg bg-sky-50 text-sky-700 inline-flex items-center justify-center">
+              <Gauge className="w-4 h-4" />
+            </span>
+            <p className="text-xs sm:text-sm font-semibold text-slate-700">{t('avgDepth')}</p>
+          </div>
+          <p className="text-xl sm:text-2xl font-bold tabular-telemetry text-slate-900">
             {formatDepth(stats?.avgDepthM ?? null, unitSystem)}
           </p>
         </div>
 
-        <div className="panel-surface p-4 space-y-1">
-          <p className="text-xs font-medium text-slate-500">{t('avgSac')}</p>
-          <p className="text-xl font-semibold tabular-telemetry text-slate-900">
+        <div className="panel-surface p-4 space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="p-1.5 rounded-lg bg-teal-50 text-teal-700 inline-flex items-center justify-center">
+              <Wind className="w-4 h-4" />
+            </span>
+            <p className="text-xs sm:text-sm font-semibold text-slate-700">{t('avgSac')}</p>
+          </div>
+          <p className="text-xl sm:text-2xl font-bold tabular-telemetry text-slate-900">
             {formatSac(stats?.avgSacLMin ?? null, unitSystem)}
           </p>
         </div>
 
-        <div className="panel-surface p-4 space-y-1">
-          <p className="text-xs font-medium text-slate-500">{t('longestDive')}</p>
-          <p className="text-xl font-semibold tabular-telemetry text-slate-900">
+        <div className="panel-surface p-4 space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="p-1.5 rounded-lg bg-sky-50 text-sky-700 inline-flex items-center justify-center">
+              <Timer className="w-4 h-4" />
+            </span>
+            <p className="text-xs sm:text-sm font-semibold text-slate-700">{t('longestDive')}</p>
+          </div>
+          <p className="text-xl sm:text-2xl font-bold tabular-telemetry text-slate-900">
             {formatDuration(stats?.longestDiveS ?? null)}
           </p>
         </div>
