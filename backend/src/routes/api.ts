@@ -1,7 +1,9 @@
 import { type AppRepository, type DivePatch, type UserSettingsRecord } from '../db/repository';
+import { parseSuuntoFit } from '../fit/parser';
 import {
   type AuthEnv,
   OAUTH_STATE_COOKIE_NAME,
+  base64UrlDecode,
   base64UrlEncode,
   buildCookie,
   parseCookies,
@@ -23,6 +25,18 @@ export type FullBackendEnv = AuthEnv & SuuntoEnv;
 
 function getOrigin(request: Request, env: AuthEnv): string {
   return env.APP_ORIGIN?.replace(/\/$/, '') || new URL(request.url).origin;
+}
+
+async function extractFitBytesFromRequest(request: Request): Promise<Uint8Array | null> {
+  const contentType = request.headers.get('Content-Type') || '';
+  if (contentType.includes('multipart/form-data')) {
+    const form = await request.formData();
+    const file = form.get('file');
+    if (!(file instanceof File)) return null;
+    return new Uint8Array(await file.arrayBuffer());
+  }
+  const buf = await request.arrayBuffer();
+  return buf.byteLength > 0 ? new Uint8Array(buf) : null;
 }
 
 export async function handleApiRoutes(params: {
@@ -59,7 +73,6 @@ export async function handleApiRoutes(params: {
     return Response.json({ ok: true, ...result });
   }
 
-  // All remaining /api/* routes require authenticated owner session
   if (!path.startsWith('/api/')) return null;
 
   const authCheck = await requireAuth(request, env);
@@ -105,7 +118,7 @@ export async function handleApiRoutes(params: {
     return new Response(null, {
       status: 302,
       headers: {
-        Location: `${origin}/settings?suunto=connected`,
+        Location: `${origin}/?suunto=connected`,
         'Set-Cookie': buildCookie(OAUTH_STATE_COOKIE_NAME, '', 0, secure),
       },
     });
@@ -126,21 +139,29 @@ export async function handleApiRoutes(params: {
     }
   }
 
-  // --- Dives & FIT Import ---
-  if (method === 'POST' && path === '/api/dives/import-fit') {
-    let fitBytes: Uint8Array;
-    const contentType = request.headers.get('Content-Type') || '';
-    if (contentType.includes('multipart/form-data')) {
-      const form = await request.formData();
-      const file = form.get('file');
-      if (!(file instanceof File)) {
-        return Response.json({ error: 'Missing .fit file in formData' }, { status: 400 });
-      }
-      fitBytes = new Uint8Array(await file.arrayBuffer());
-    } else {
-      fitBytes = new Uint8Array(await request.arrayBuffer());
+  // --- Draft FIT Parse (no DB/R2 write until user saves) ---
+  if (method === 'POST' && path === '/api/dives/parse-fit') {
+    const fitBytes = await extractFitBytesFromRequest(request);
+    if (!fitBytes || fitBytes.length === 0) {
+      return Response.json({ error: 'Missing or empty .fit payload' }, { status: 400 });
     }
-    if (fitBytes.length === 0) {
+    try {
+      const parsed = await parseSuuntoFit(fitBytes);
+      return Response.json({
+        ok: true,
+        parsed,
+        fitBase64: base64UrlEncode(fitBytes),
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Invalid FIT file';
+      return Response.json({ error: message }, { status: 400 });
+    }
+  }
+
+  // --- Direct FIT Import ---
+  if (method === 'POST' && path === '/api/dives/import-fit') {
+    const fitBytes = await extractFitBytesFromRequest(request);
+    if (!fitBytes || fitBytes.length === 0) {
       return Response.json({ error: 'Empty .fit payload' }, { status: 400 });
     }
     try {
@@ -153,15 +174,29 @@ export async function handleApiRoutes(params: {
     }
   }
 
+  // --- Dives CRUD ---
   if (method === 'GET' && path === '/api/dives') {
     const dives = await repo.listDives();
     return Response.json({ dives });
   }
 
   if (method === 'POST' && path === '/api/dives') {
-    const body = (await request.json().catch(() => null)) as DivePatch | null;
+    const body = (await request.json().catch(() => null)) as
+      | (DivePatch & { fit_base64?: string })
+      | null;
     if (!body) return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
-    const dive = await repo.createManualDive(body);
+
+    let fitR2Key: string | null = null;
+    if (typeof body.fit_base64 === 'string' && body.fit_base64 && body.fit_hash) {
+      const fitBytes = base64UrlDecode(body.fit_base64);
+      fitR2Key = `manual/${body.fit_hash}.fit`;
+      await bucket.put(fitR2Key, fitBytes);
+    }
+
+    const dive = await repo.createManualDive({
+      ...body,
+      fit_r2_key: fitR2Key ?? body.fit_r2_key ?? null,
+    });
     return Response.json({ dive }, { status: 201 });
   }
 
@@ -233,7 +268,119 @@ export async function handleApiRoutes(params: {
     }
   }
 
-  // --- Gear ---
+  // --- Dive Centers ---
+  if (method === 'GET' && path === '/api/centers') {
+    return Response.json({ centers: await repo.listCenters() });
+  }
+  if (method === 'POST' && path === '/api/centers') {
+    const body = (await request.json().catch(() => null)) as {
+      id?: string;
+      name?: string;
+      location_text?: string | null;
+      latitude?: number | null;
+      longitude?: number | null;
+      notes?: string | null;
+    } | null;
+    if (!body?.name?.trim()) return Response.json({ error: 'Center name is required' }, { status: 400 });
+    const center = await repo.upsertCenter({ ...body, name: body.name });
+    return Response.json({ center }, { status: 201 });
+  }
+  const centerIdMatch = path.match(/^\/api\/centers\/([^/]+)$/);
+  if (centerIdMatch) {
+    const id = decodeURIComponent(centerIdMatch[1]);
+    if (method === 'PATCH') {
+      const body = (await request.json().catch(() => null)) as {
+        name?: string;
+        location_text?: string | null;
+        latitude?: number | null;
+        longitude?: number | null;
+        notes?: string | null;
+      } | null;
+      if (!body?.name?.trim()) return Response.json({ error: 'Center name is required' }, { status: 400 });
+      const center = await repo.upsertCenter({ ...body, id, name: body.name });
+      return Response.json({ center });
+    }
+    if (method === 'DELETE') {
+      const deleted = await repo.deleteCenter(id);
+      return deleted
+        ? Response.json({ ok: true })
+        : Response.json({ error: 'Center not found' }, { status: 404 });
+    }
+  }
+
+  // --- Buddies ---
+  if (method === 'GET' && path === '/api/buddies') {
+    return Response.json({ buddies: await repo.listBuddies() });
+  }
+  if (method === 'POST' && path === '/api/buddies') {
+    const body = (await request.json().catch(() => null)) as {
+      id?: string;
+      name?: string;
+      notes?: string | null;
+    } | null;
+    if (!body?.name?.trim()) return Response.json({ error: 'Buddy name is required' }, { status: 400 });
+    const buddy = await repo.upsertBuddy({ ...body, name: body.name });
+    return Response.json({ buddy }, { status: 201 });
+  }
+  const buddyIdMatch = path.match(/^\/api\/buddies\/([^/]+)$/);
+  if (buddyIdMatch) {
+    const id = decodeURIComponent(buddyIdMatch[1]);
+    if (method === 'PATCH') {
+      const body = (await request.json().catch(() => null)) as {
+        name?: string;
+        notes?: string | null;
+      } | null;
+      if (!body?.name?.trim()) return Response.json({ error: 'Buddy name is required' }, { status: 400 });
+      const buddy = await repo.upsertBuddy({ ...body, id, name: body.name });
+      return Response.json({ buddy });
+    }
+    if (method === 'DELETE') {
+      const deleted = await repo.deleteBuddy(id);
+      return deleted
+        ? Response.json({ ok: true })
+        : Response.json({ error: 'Buddy not found' }, { status: 404 });
+    }
+  }
+
+  // --- Dive Computers ---
+  if (method === 'GET' && path === '/api/computers') {
+    return Response.json({ computers: await repo.listComputers() });
+  }
+  if (method === 'POST' && path === '/api/computers') {
+    const body = (await request.json().catch(() => null)) as {
+      id?: string;
+      name?: string;
+      brand?: string | null;
+      model?: string | null;
+      notes?: string | null;
+    } | null;
+    if (!body?.name?.trim()) return Response.json({ error: 'Computer name is required' }, { status: 400 });
+    const computer = await repo.upsertComputer({ ...body, name: body.name });
+    return Response.json({ computer }, { status: 201 });
+  }
+  const compIdMatch = path.match(/^\/api\/computers\/([^/]+)$/);
+  if (compIdMatch) {
+    const id = decodeURIComponent(compIdMatch[1]);
+    if (method === 'PATCH') {
+      const body = (await request.json().catch(() => null)) as {
+        name?: string;
+        brand?: string | null;
+        model?: string | null;
+        notes?: string | null;
+      } | null;
+      if (!body?.name?.trim()) return Response.json({ error: 'Computer name is required' }, { status: 400 });
+      const computer = await repo.upsertComputer({ ...body, id, name: body.name });
+      return Response.json({ computer });
+    }
+    if (method === 'DELETE') {
+      const deleted = await repo.deleteComputer(id);
+      return deleted
+        ? Response.json({ ok: true })
+        : Response.json({ error: 'Computer not found' }, { status: 404 });
+    }
+  }
+
+  // --- Gear (Name, Brand, Model, Notes) ---
   if (method === 'GET' && path === '/api/gear') {
     return Response.json({ gear: await repo.listGear() });
   }
@@ -242,27 +389,47 @@ export async function handleApiRoutes(params: {
       id?: string;
       name?: string;
       category?: string;
+      brand?: string | null;
+      model?: string | null;
       brand_model?: string | null;
       notes?: string | null;
     } | null;
-    if (!body?.name?.trim() || !body?.category?.trim()) {
-      return Response.json({ error: 'Gear name and category are required' }, { status: 400 });
+    if (!body?.name?.trim()) {
+      return Response.json({ error: 'Gear name is required' }, { status: 400 });
     }
     const item = await repo.upsertGear({
       id: body.id,
       name: body.name,
       category: body.category,
+      brand: body.brand,
+      model: body.model,
       brand_model: body.brand_model,
       notes: body.notes,
     });
     return Response.json({ item }, { status: 201 });
   }
   const gearIdMatch = path.match(/^\/api\/gear\/([^/]+)$/);
-  if (gearIdMatch && method === 'DELETE') {
-    const deleted = await repo.deleteGear(decodeURIComponent(gearIdMatch[1]));
-    return deleted
-      ? Response.json({ ok: true })
-      : Response.json({ error: 'Gear item not found' }, { status: 404 });
+  if (gearIdMatch) {
+    const id = decodeURIComponent(gearIdMatch[1]);
+    if (method === 'PATCH') {
+      const body = (await request.json().catch(() => null)) as {
+        name?: string;
+        category?: string;
+        brand?: string | null;
+        model?: string | null;
+        brand_model?: string | null;
+        notes?: string | null;
+      } | null;
+      if (!body?.name?.trim()) return Response.json({ error: 'Gear name is required' }, { status: 400 });
+      const item = await repo.upsertGear({ ...body, id, name: body.name });
+      return Response.json({ item });
+    }
+    if (method === 'DELETE') {
+      const deleted = await repo.deleteGear(id);
+      return deleted
+        ? Response.json({ ok: true })
+        : Response.json({ error: 'Gear item not found' }, { status: 404 });
+    }
   }
 
   // --- Certifications ---
@@ -290,11 +457,32 @@ export async function handleApiRoutes(params: {
     return Response.json({ certification }, { status: 201 });
   }
   const certIdMatch = path.match(/^\/api\/certifications\/([^/]+)$/);
-  if (certIdMatch && method === 'DELETE') {
-    const deleted = await repo.deleteCertification(decodeURIComponent(certIdMatch[1]));
-    return deleted
-      ? Response.json({ ok: true })
-      : Response.json({ error: 'Certification not found' }, { status: 404 });
+  if (certIdMatch) {
+    const id = decodeURIComponent(certIdMatch[1]);
+    if (method === 'PATCH') {
+      const body = (await request.json().catch(() => null)) as {
+        agency?: string;
+        level?: string;
+        cert_number?: string | null;
+        issued_date?: string | null;
+      } | null;
+      if (!body?.agency?.trim() || !body?.level?.trim()) {
+        return Response.json({ error: 'Agency and level are required' }, { status: 400 });
+      }
+      const certification = await repo.upsertCertification({
+        ...body,
+        id,
+        agency: body.agency,
+        level: body.level,
+      });
+      return Response.json({ certification });
+    }
+    if (method === 'DELETE') {
+      const deleted = await repo.deleteCertification(id);
+      return deleted
+        ? Response.json({ ok: true })
+        : Response.json({ error: 'Certification not found' }, { status: 404 });
+    }
   }
 
   // --- User Settings ---

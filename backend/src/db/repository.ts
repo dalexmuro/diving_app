@@ -6,6 +6,11 @@ export type WaterType = 'salt' | 'fresh';
 export type TankMaterial = 'steel' | 'aluminum' | 'composite';
 export type GasType = 'air' | 'nitrox' | 'trimix';
 
+export interface DecoStop {
+  depth_m: number;
+  duration_min: number;
+}
+
 export interface DiveRecord {
   id: string;
   suunto_workout_key: string | null;
@@ -27,6 +32,7 @@ export interface DiveRecord {
   he_pct: number;
   deco: number;
   deco_time_s: number;
+  deco_stops_json: string;
   gf_low: number | null;
   gf_high: number | null;
   start_pressure_bar: number | null;
@@ -40,7 +46,12 @@ export interface DiveRecord {
   site_longitude?: number | null;
   site_country?: string | null;
   buddy: string | null;
+  buddies_json: string;
+  gear_used_json: string;
   dive_center: string | null;
+  dive_center_location: string | null;
+  dive_center_lat: number | null;
+  dive_center_lng: number | null;
   tags_json: string;
   visibility: RatingScale | null;
   buoyancy: RatingScale | null;
@@ -68,10 +79,38 @@ export interface DiveSiteRecord {
   last_dive_at?: string | null;
 }
 
+export interface DiveCenterRecord {
+  id: string;
+  name: string;
+  location_text: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface BuddyRecord {
+  id: string;
+  name: string;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface DiveComputerRecord {
+  id: string;
+  name: string;
+  brand: string | null;
+  model: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
 export interface GearItemRecord {
   id: string;
   name: string;
   category: string;
+  brand: string | null;
+  model: string | null;
   brand_model: string | null;
   notes: string | null;
   created_at: string;
@@ -118,6 +157,8 @@ const EDITABLE_DIVE_COLUMNS = [
   'ended_at',
   'duration_s',
   'computer_name',
+  'dive_number_in_series',
+  'surface_time_s',
   'max_depth_m',
   'avg_depth_m',
   'min_temp_c',
@@ -128,6 +169,9 @@ const EDITABLE_DIVE_COLUMNS = [
   'he_pct',
   'deco',
   'deco_time_s',
+  'deco_stops_json',
+  'gf_low',
+  'gf_high',
   'start_pressure_bar',
   'end_pressure_bar',
   'tank_volume_l',
@@ -135,7 +179,12 @@ const EDITABLE_DIVE_COLUMNS = [
   'ballast_kg',
   'site_id',
   'buddy',
+  'buddies_json',
+  'gear_used_json',
   'dive_center',
+  'dive_center_location',
+  'dive_center_lat',
+  'dive_center_lng',
   'tags_json',
   'visibility',
   'buoyancy',
@@ -146,7 +195,16 @@ const EDITABLE_DIVE_COLUMNS = [
 export type EditableDiveField = (typeof EDITABLE_DIVE_COLUMNS)[number];
 export type DivePatch = Partial<Record<EditableDiveField, unknown>> & {
   tags?: string[];
+  buddies?: string[];
+  gear_used?: string[];
+  deco_stops?: DecoStop[];
   site_name?: string;
+  site_latitude?: number | null;
+  site_longitude?: number | null;
+  site_country?: string | null;
+  samples?: TelemetrySample[];
+  fit_hash?: string | null;
+  fit_r2_key?: string | null;
 };
 
 function getSeasonFromIso(iso: string): 'winter' | 'spring' | 'summer' | 'autumn' {
@@ -158,20 +216,138 @@ function getSeasonFromIso(iso: string): 'winter' | 'spring' | 'summer' | 'autumn
 }
 
 export function createD1Repository(db: D1Database) {
-  async function findOrCreateSiteByName(name: string): Promise<string> {
-    const trimmed = name.trim();
+  async function findOrCreateSite(params: {
+    name: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    country?: string | null;
+  }): Promise<string> {
+    const trimmed = params.name.trim();
     const existing = await db
-      .prepare('SELECT id FROM dive_sites WHERE LOWER(name) = LOWER(?) LIMIT 1')
+      .prepare('SELECT id, latitude, longitude, country FROM dive_sites WHERE LOWER(name) = LOWER(?) LIMIT 1')
       .bind(trimmed)
-      .first<{ id: string }>();
-    if (existing) return existing.id;
+      .first<{ id: string; latitude: number | null; longitude: number | null; country: string | null }>();
+    if (existing) {
+      if (params.latitude !== undefined || params.longitude !== undefined || params.country !== undefined) {
+        await db
+          .prepare(
+            `UPDATE dive_sites
+             SET latitude = COALESCE(?, latitude),
+                 longitude = COALESCE(?, longitude),
+                 country = COALESCE(?, country),
+                 updated_at = datetime('now')
+             WHERE id = ?`,
+          )
+          .bind(
+            params.latitude ?? null,
+            params.longitude ?? null,
+            params.country ?? null,
+            existing.id,
+          )
+          .run();
+      }
+      return existing.id;
+    }
 
     const id = crypto.randomUUID();
     await db
-      .prepare('INSERT INTO dive_sites (id, name) VALUES (?, ?)')
-      .bind(id, trimmed)
+      .prepare(
+        'INSERT INTO dive_sites (id, name, latitude, longitude, country) VALUES (?, ?, ?, ?, ?)',
+      )
+      .bind(id, trimmed, params.latitude ?? null, params.longitude ?? null, params.country ?? null)
       .run();
     return id;
+  }
+
+  async function ensureCatalogEntriesFromDive(patch: DivePatch): Promise<void> {
+    if (typeof patch.computer_name === 'string' && patch.computer_name.trim()) {
+      const cname = patch.computer_name.trim();
+      const ex = await db
+        .prepare('SELECT id FROM dive_computers WHERE LOWER(name) = LOWER(?) LIMIT 1')
+        .bind(cname)
+        .first<{ id: string }>();
+      if (!ex) {
+        await db
+          .prepare('INSERT INTO dive_computers (id, name) VALUES (?, ?)')
+          .bind(crypto.randomUUID(), cname)
+          .run();
+      }
+    }
+
+    if (typeof patch.dive_center === 'string' && patch.dive_center.trim()) {
+      const centerName = patch.dive_center.trim();
+      const loc =
+        typeof patch.dive_center_location === 'string' && patch.dive_center_location.trim()
+          ? patch.dive_center_location.trim()
+          : null;
+      const lat = typeof patch.dive_center_lat === 'number' ? patch.dive_center_lat : null;
+      const lng = typeof patch.dive_center_lng === 'number' ? patch.dive_center_lng : null;
+
+      const ex = await db
+        .prepare('SELECT id FROM dive_centers WHERE LOWER(name) = LOWER(?) LIMIT 1')
+        .bind(centerName)
+        .first<{ id: string }>();
+      if (!ex) {
+        await db
+          .prepare(
+            'INSERT INTO dive_centers (id, name, location_text, latitude, longitude) VALUES (?, ?, ?, ?, ?)',
+          )
+          .bind(crypto.randomUUID(), centerName, loc, lat, lng)
+          .run();
+      } else if (loc !== null || lat !== null || lng !== null) {
+        await db
+          .prepare(
+            `UPDATE dive_centers
+             SET location_text = COALESCE(?, location_text),
+                 latitude = COALESCE(?, latitude),
+                 longitude = COALESCE(?, longitude)
+             WHERE id = ?`,
+          )
+          .bind(loc, lat, lng, ex.id)
+          .run();
+      }
+    }
+
+    const buddyNames: string[] = [];
+    if (Array.isArray(patch.buddies)) {
+      buddyNames.push(...patch.buddies.map((b) => b.trim()).filter(Boolean));
+    } else if (typeof patch.buddy === 'string' && patch.buddy.trim()) {
+      buddyNames.push(
+        ...patch.buddy
+          .split(',')
+          .map((b) => b.trim())
+          .filter(Boolean),
+      );
+    }
+    for (const bName of buddyNames) {
+      const ex = await db
+        .prepare('SELECT id FROM buddies WHERE LOWER(name) = LOWER(?) LIMIT 1')
+        .bind(bName)
+        .first<{ id: string }>();
+      if (!ex) {
+        await db
+          .prepare('INSERT INTO buddies (id, name) VALUES (?, ?)')
+          .bind(crypto.randomUUID(), bName)
+          .run();
+      }
+    }
+
+    if (Array.isArray(patch.gear_used)) {
+      for (const rawGear of patch.gear_used) {
+        const gName = rawGear.trim();
+        if (!gName) continue;
+        const ex = await db
+          .prepare('SELECT id FROM gear_items WHERE LOWER(name) = LOWER(?) LIMIT 1')
+          .bind(gName)
+          .first<{ id: string }>();
+        if (!ex) {
+          await db
+            .prepare('INSERT INTO gear_items (id, name, category) VALUES (?, ?, ?)')
+            .bind(crypto.randomUUID(), gName, 'gear')
+            .run();
+        }
+      }
+    }
   }
 
   async function insertSamples(diveId: string, samples: TelemetrySample[]): Promise<void> {
@@ -276,11 +452,6 @@ export function createD1Repository(db: D1Database) {
       return Boolean(row);
     },
 
-    /**
-     * Non-destructive telemetry upsert:
-     * - If the dive already exists (matched by suunto_workout_key or fit_hash),
-     *   it NEVER overwrites any user-edited or populated logbook field.
-     */
     async upsertFromTelemetry(params: {
       parsed: ParsedFitDive;
       suuntoWorkoutKey?: string | null;
@@ -316,8 +487,11 @@ export function createD1Repository(db: D1Database) {
       }
 
       const siteId = parsed.siteDescription
-        ? await findOrCreateSiteByName(parsed.siteDescription)
+        ? await findOrCreateSite({ name: parsed.siteDescription })
         : null;
+      if (parsed.computerName) {
+        await ensureCatalogEntriesFromDive({ computer_name: parsed.computerName });
+      }
       const diveId = crypto.randomUUID();
 
       await db
@@ -362,23 +536,53 @@ export function createD1Repository(db: D1Database) {
     },
 
     async createManualDive(patch: DivePatch): Promise<DiveDetail> {
+      if (patch.fit_hash) {
+        const dup = await db
+          .prepare('SELECT id FROM dives WHERE fit_hash = ? LIMIT 1')
+          .bind(patch.fit_hash)
+          .first<{ id: string }>();
+        if (dup) {
+          return (await this.updateDive(dup.id, patch))!;
+        }
+      }
+
       const id = crypto.randomUUID();
       let siteId = typeof patch.site_id === 'string' ? patch.site_id : null;
       if (!siteId && typeof patch.site_name === 'string' && patch.site_name.trim()) {
-        siteId = await findOrCreateSiteByName(patch.site_name);
+        siteId = await findOrCreateSite({
+          name: patch.site_name,
+          latitude: patch.site_latitude,
+          longitude: patch.site_longitude,
+          country: patch.site_country,
+        });
       }
       const startedAt =
-        typeof patch.started_at === 'string' ? patch.started_at : new Date().toISOString();
+        typeof patch.started_at === 'string' && patch.started_at
+          ? patch.started_at
+          : new Date().toISOString();
       const durationS = typeof patch.duration_s === 'number' ? patch.duration_s : 0;
       const maxDepthM = typeof patch.max_depth_m === 'number' ? patch.max_depth_m : 0;
 
       await db
         .prepare(
-          `INSERT INTO dives (id, started_at, duration_s, max_depth_m, site_id, user_edited_fields_json)
-           VALUES (?, ?, ?, ?, ?, '[]')`,
+          `INSERT INTO dives (
+            id, fit_hash, fit_r2_key, started_at, duration_s, max_depth_m, site_id, user_edited_fields_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, '[]')`,
         )
-        .bind(id, startedAt, durationS, maxDepthM, siteId)
+        .bind(
+          id,
+          patch.fit_hash ?? null,
+          patch.fit_r2_key ?? null,
+          startedAt,
+          durationS,
+          maxDepthM,
+          siteId,
+        )
         .run();
+
+      if (Array.isArray(patch.samples) && patch.samples.length > 0) {
+        await insertSamples(id, patch.samples);
+      }
 
       return (await this.updateDive(id, { ...patch, site_id: siteId ?? undefined }))!;
     },
@@ -390,12 +594,38 @@ export function createD1Repository(db: D1Database) {
         .first<DiveRecord>();
       if (!current) return null;
 
+      await ensureCatalogEntriesFromDive(patch);
+
       const normalized: Record<string, unknown> = { ...patch };
       if (Array.isArray(patch.tags)) {
         normalized.tags_json = JSON.stringify(patch.tags);
       }
-      if (typeof patch.site_name === 'string' && patch.site_name.trim() && !patch.site_id) {
-        normalized.site_id = await findOrCreateSiteByName(patch.site_name);
+      if (Array.isArray(patch.buddies)) {
+        const cleanBuddies = patch.buddies.map((b) => b.trim()).filter(Boolean);
+        normalized.buddies_json = JSON.stringify(cleanBuddies);
+        normalized.buddy = cleanBuddies.length > 0 ? cleanBuddies.join(', ') : null;
+      }
+      if (Array.isArray(patch.gear_used)) {
+        const cleanGear = patch.gear_used.map((g) => g.trim()).filter(Boolean);
+        normalized.gear_used_json = JSON.stringify(cleanGear);
+      }
+      if (Array.isArray(patch.deco_stops)) {
+        const cleanStops = patch.deco_stops.filter(
+          (s) => Number.isFinite(s.depth_m) && s.depth_m > 0 && Number.isFinite(s.duration_min) && s.duration_min > 0,
+        );
+        normalized.deco_stops_json = JSON.stringify(cleanStops);
+        normalized.deco = cleanStops.length > 0 ? 1 : 0;
+        normalized.deco_time_s = Math.round(
+          cleanStops.reduce((sum, s) => sum + s.duration_min, 0) * 60,
+        );
+      }
+      if (typeof patch.site_name === 'string' && patch.site_name.trim()) {
+        normalized.site_id = await findOrCreateSite({
+          name: patch.site_name,
+          latitude: patch.site_latitude,
+          longitude: patch.site_longitude,
+          country: patch.site_country,
+        });
       }
 
       const editedSet = new Set<string>(JSON.parse(current.user_edited_fields_json || '[]') as string[]);
@@ -430,6 +660,7 @@ export function createD1Repository(db: D1Database) {
       return (res.meta?.changes ?? 0) > 0;
     },
 
+    // --- Sites ---
     async listSites(): Promise<DiveSiteRecord[]> {
       const { results } = await db
         .prepare(
@@ -478,9 +709,138 @@ export function createD1Repository(db: D1Database) {
       return (res.meta?.changes ?? 0) > 0;
     },
 
+    // --- Dive Centers ---
+    async listCenters(): Promise<DiveCenterRecord[]> {
+      const { results } = await db
+        .prepare('SELECT * FROM dive_centers ORDER BY name ASC')
+        .all<DiveCenterRecord>();
+      return results ?? [];
+    },
+
+    async upsertCenter(input: {
+      id?: string;
+      name: string;
+      location_text?: string | null;
+      latitude?: number | null;
+      longitude?: number | null;
+      notes?: string | null;
+    }): Promise<DiveCenterRecord> {
+      const id = input.id ?? crypto.randomUUID();
+      await db
+        .prepare(
+          `INSERT INTO dive_centers (id, name, location_text, latitude, longitude, notes)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             name = excluded.name,
+             location_text = excluded.location_text,
+             latitude = excluded.latitude,
+             longitude = excluded.longitude,
+             notes = excluded.notes`,
+        )
+        .bind(
+          id,
+          input.name.trim(),
+          input.location_text ?? null,
+          input.latitude ?? null,
+          input.longitude ?? null,
+          input.notes ?? null,
+        )
+        .run();
+      return (await db
+        .prepare('SELECT * FROM dive_centers WHERE id = ?')
+        .bind(id)
+        .first<DiveCenterRecord>())!;
+    },
+
+    async deleteCenter(id: string): Promise<boolean> {
+      const res = await db.prepare('DELETE FROM dive_centers WHERE id = ?').bind(id).run();
+      return (res.meta?.changes ?? 0) > 0;
+    },
+
+    // --- Buddies ---
+    async listBuddies(): Promise<BuddyRecord[]> {
+      const { results } = await db
+        .prepare('SELECT * FROM buddies ORDER BY name ASC')
+        .all<BuddyRecord>();
+      return results ?? [];
+    },
+
+    async upsertBuddy(input: {
+      id?: string;
+      name: string;
+      notes?: string | null;
+    }): Promise<BuddyRecord> {
+      const id = input.id ?? crypto.randomUUID();
+      await db
+        .prepare(
+          `INSERT INTO buddies (id, name, notes)
+           VALUES (?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             name = excluded.name,
+             notes = excluded.notes`,
+        )
+        .bind(id, input.name.trim(), input.notes ?? null)
+        .run();
+      return (await db
+        .prepare('SELECT * FROM buddies WHERE id = ?')
+        .bind(id)
+        .first<BuddyRecord>())!;
+    },
+
+    async deleteBuddy(id: string): Promise<boolean> {
+      const res = await db.prepare('DELETE FROM buddies WHERE id = ?').bind(id).run();
+      return (res.meta?.changes ?? 0) > 0;
+    },
+
+    // --- Dive Computers ---
+    async listComputers(): Promise<DiveComputerRecord[]> {
+      const { results } = await db
+        .prepare('SELECT * FROM dive_computers ORDER BY name ASC')
+        .all<DiveComputerRecord>();
+      return results ?? [];
+    },
+
+    async upsertComputer(input: {
+      id?: string;
+      name: string;
+      brand?: string | null;
+      model?: string | null;
+      notes?: string | null;
+    }): Promise<DiveComputerRecord> {
+      const id = input.id ?? crypto.randomUUID();
+      await db
+        .prepare(
+          `INSERT INTO dive_computers (id, name, brand, model, notes)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             name = excluded.name,
+             brand = excluded.brand,
+             model = excluded.model,
+             notes = excluded.notes`,
+        )
+        .bind(
+          id,
+          input.name.trim(),
+          input.brand ?? null,
+          input.model ?? null,
+          input.notes ?? null,
+        )
+        .run();
+      return (await db
+        .prepare('SELECT * FROM dive_computers WHERE id = ?')
+        .bind(id)
+        .first<DiveComputerRecord>())!;
+    },
+
+    async deleteComputer(id: string): Promise<boolean> {
+      const res = await db.prepare('DELETE FROM dive_computers WHERE id = ?').bind(id).run();
+      return (res.meta?.changes ?? 0) > 0;
+    },
+
+    // --- Gear (Name, Brand, Model, Notes) ---
     async listGear(): Promise<GearItemRecord[]> {
       const { results } = await db
-        .prepare('SELECT * FROM gear_items ORDER BY category ASC, name ASC')
+        .prepare('SELECT * FROM gear_items ORDER BY name ASC')
         .all<GearItemRecord>();
       return results ?? [];
     },
@@ -488,22 +848,30 @@ export function createD1Repository(db: D1Database) {
     async upsertGear(input: {
       id?: string;
       name: string;
-      category: string;
+      category?: string;
+      brand?: string | null;
+      model?: string | null;
       brand_model?: string | null;
       notes?: string | null;
     }): Promise<GearItemRecord> {
       const id = input.id ?? crypto.randomUUID();
+      const category = input.category?.trim() || 'gear';
+      const brand = input.brand?.trim() || null;
+      const model = input.model?.trim() || null;
+      const combined = input.brand_model ?? ([brand, model].filter(Boolean).join(' ') || null);
       await db
         .prepare(
-          `INSERT INTO gear_items (id, name, category, brand_model, notes)
-           VALUES (?, ?, ?, ?, ?)
+          `INSERT INTO gear_items (id, name, category, brand, model, brand_model, notes)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
              name = excluded.name,
              category = excluded.category,
+             brand = excluded.brand,
+             model = excluded.model,
              brand_model = excluded.brand_model,
              notes = excluded.notes`,
         )
-        .bind(id, input.name.trim(), input.category.trim(), input.brand_model ?? null, input.notes ?? null)
+        .bind(id, input.name.trim(), category, brand, model, combined, input.notes ?? null)
         .run();
       return (await db
         .prepare('SELECT * FROM gear_items WHERE id = ?')
@@ -516,6 +884,7 @@ export function createD1Repository(db: D1Database) {
       return (res.meta?.changes ?? 0) > 0;
     },
 
+    // --- Certifications ---
     async listCertifications(): Promise<CertificationRecord[]> {
       const { results } = await db
         .prepare('SELECT * FROM certifications ORDER BY issued_date DESC, level ASC')
@@ -554,6 +923,7 @@ export function createD1Repository(db: D1Database) {
       return (res.meta?.changes ?? 0) > 0;
     },
 
+    // --- Settings & Suunto ---
     async getSettings(): Promise<UserSettingsRecord> {
       const row = await db
         .prepare('SELECT language, unit_system, ascent_rate_limit_m_min FROM user_settings WHERE id = 1')

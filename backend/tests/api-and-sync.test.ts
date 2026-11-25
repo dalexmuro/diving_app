@@ -9,7 +9,10 @@ import { type FullBackendEnv, handleApiRoutes } from '../src/routes/api';
 import { type FetchLike } from '../src/routes/auth';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const migrationSql = readFileSync(resolve(here, '../migrations/0001_init.sql'), 'utf8');
+const migrationSql =
+  readFileSync(resolve(here, '../migrations/0001_init.sql'), 'utf8') +
+  '\n' +
+  readFileSync(resolve(here, '../migrations/0002_catalogs_and_paliers.sql'), 'utf8');
 
 const DUMMY_ENV: FullBackendEnv = {
   APP_JWT_SECRET: 'dummy_jwt_secret_for_api_tests',
@@ -302,5 +305,119 @@ describe('REST API, R2 archival, and non-destructive Suunto sync', () => {
     expect(await settingsRes!.json()).toEqual({
       settings: { language: 'fr', unit_system: 'metric', ascent_rate_limit_m_min: 12 },
     });
+  });
+
+  it('parses .fit as draft without DB insert, auto-populates catalogs on save, handles paliers, and deletes dives', async () => {
+    const repo = createD1Repository(createTestD1());
+    const r2Objects = new Map<string, Uint8Array>();
+    const bucket = {
+      async put(key: string, val: Uint8Array | ArrayBuffer) {
+        r2Objects.set(key, val instanceof Uint8Array ? val : new Uint8Array(val));
+      },
+    };
+    const token = await signJwt(
+      { sub: 'owner', email: DUMMY_ENV.APP_USER_EMAIL, purpose: 'session' },
+      DUMMY_ENV.APP_JWT_SECRET,
+    );
+    const authHeaders = { Authorization: `Bearer ${token}` };
+
+    // 1. Draft parse .fit -> must NOT create any dive or R2 object
+    const fit = buildMiniFit('Medes Arch', 1100500000);
+    const parseRes = await handleApiRoutes({
+      request: new Request('https://diving.example.com/api/dives/parse-fit', {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'application/octet-stream' },
+        body: fit,
+      }),
+      env: DUMMY_ENV,
+      repo,
+      bucket,
+    });
+    expect(parseRes?.status).toBe(200);
+    const parsedJson = (await parseRes!.json()) as {
+      parsed: { fitHash: string; maxDepthM: number; durationS: number; samples: unknown[] };
+      fitBase64: string;
+    };
+    expect((await repo.listDives()).length).toBe(0);
+    expect(r2Objects.size).toBe(0);
+
+    // 2. Save draft dive with multiple paliers, buddies, gear, center + GPS, and custom depth/duration
+    const createRes = await handleApiRoutes({
+      request: new Request('https://diving.example.com/api/dives', {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          started_at: '2026-07-10T09:30:00Z',
+          duration_s: 3120,
+          max_depth_m: 26.4,
+          site_name: 'Medes Arch',
+          site_latitude: 42.0475,
+          site_longitude: 3.2224,
+          computer_name: 'Suunto Nautic',
+          dive_center: 'Costa Brava Sub',
+          dive_center_location: 'L’Estartit, Spain',
+          dive_center_lat: 42.0531,
+          dive_center_lng: 3.1994,
+          buddies: ['Arthur', 'Claire'],
+          gear_used: ['Combinaison 7mm', 'Apeks XTX200'],
+          deco_stops: [
+            { depth_m: 6, duration_min: 2 },
+            { depth_m: 3, duration_min: 5 },
+          ],
+          fit_hash: parsedJson.parsed.fitHash,
+          fit_base64: parsedJson.fitBase64,
+          samples: parsedJson.parsed.samples,
+        }),
+      }),
+      env: DUMMY_ENV,
+      repo,
+      bucket,
+    });
+    expect(createRes?.status).toBe(201);
+    const createdBody = (await createRes!.json()) as {
+      dive: { id: string; deco: number; deco_time_s: number; deco_stops_json: string };
+    };
+    expect(createdBody.dive.deco).toBe(1);
+    expect(createdBody.dive.deco_time_s).toBe(420); // 7 min
+    expect(JSON.parse(createdBody.dive.deco_stops_json)).toHaveLength(2);
+    expect(r2Objects.size).toBe(1);
+
+    // 3. Verify catalogs were auto-populated (buddies, centers, computers, gear)
+    expect((await repo.listBuddies()).map((b) => b.name)).toEqual(['Arthur', 'Claire']);
+    expect((await repo.listCenters()).map((c) => c.name)).toEqual(['Costa Brava Sub']);
+    expect((await repo.listComputers()).map((c) => c.name)).toEqual(['Suunto Nautic']);
+    expect((await repo.listGear()).map((g) => g.name)).toEqual(['Apeks XTX200', 'Combinaison 7mm']);
+
+    // 4. Edit gear item with brand, model, notes (#10 & #11)
+    const gearItems = await repo.listGear();
+    const editGearRes = await handleApiRoutes({
+      request: new Request(`https://diving.example.com/api/gear/${gearItems[0].id}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Regulador Principal',
+          brand: 'Apeks',
+          model: 'XTX200',
+          notes: 'DIN 300 bar',
+        }),
+      }),
+      env: DUMMY_ENV,
+      repo,
+      bucket,
+    });
+    expect(editGearRes?.status).toBe(200);
+
+    // 5. Delete dive (#6)
+    const delRes = await handleApiRoutes({
+      request: new Request(`https://diving.example.com/api/dives/${createdBody.dive.id}`, {
+        method: 'DELETE',
+        headers: authHeaders,
+      }),
+      env: DUMMY_ENV,
+      repo,
+      bucket,
+    });
+    expect(delRes?.status).toBe(200);
+    expect((await repo.listDives()).length).toBe(0);
   });
 });

@@ -5,12 +5,12 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const migrationSql = readFileSync(
-  resolve(here, '../migrations/0001_init.sql'),
-  'utf8',
-);
+const migrationSql =
+  readFileSync(resolve(here, '../migrations/0001_init.sql'), 'utf8') +
+  '\n' +
+  readFileSync(resolve(here, '../migrations/0002_catalogs_and_paliers.sql'), 'utf8');
 
-describe('0001_init.sql D1 schema', () => {
+describe('D1 schema migrations (0001 + 0002)', () => {
   it('creates all expected tables and default user settings', () => {
     const db = new DatabaseSync(':memory:');
     db.exec(migrationSql);
@@ -22,7 +22,10 @@ describe('0001_init.sql D1 schema', () => {
       .all() as Array<{ name: string }>;
 
     expect(tables.map((t) => t.name)).toEqual([
+      'buddies',
       'certifications',
+      'dive_centers',
+      'dive_computers',
       'dive_samples',
       'dive_sites',
       'dives',
