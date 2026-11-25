@@ -113,8 +113,11 @@ export function App() {
   const [pendingView, setPendingView] = useState<AppView | null>(null);
 
   const activeViewRef = useRef(activeView);
+  const selectedDiveIdRef = useRef(selectedDiveId);
   const isFormDirtyRef = useRef(isFormDirty);
+  const scrollPositionsRef = useRef<Map<AppView, number>>(new Map());
   activeViewRef.current = activeView;
+  selectedDiveIdRef.current = selectedDiveId;
   isFormDirtyRef.current = isFormDirty;
 
   const refreshDivesAndStats = useCallback(async () => {
@@ -204,7 +207,10 @@ export function App() {
 
   useEffect(() => {
     try {
-      window.history.replaceState({ view: activeViewRef.current, diveId: selectedDiveId }, '');
+      window.history.replaceState(
+        { view: activeViewRef.current, diveId: selectedDiveIdRef.current },
+        '',
+      );
     } catch {
       // Ignore
     }
@@ -220,7 +226,10 @@ export function App() {
       ) {
         // Re-push current state and show unsaved-changes guard instead of discarding edits
         try {
-          window.history.pushState({ view: 'dive-detail', diveId: selectedDiveId }, '');
+          window.history.pushState(
+            { view: 'dive-detail', diveId: selectedDiveIdRef.current },
+            '',
+          );
         } catch {
           // Ignore
         }
@@ -236,7 +245,13 @@ export function App() {
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [selectedDiveId]);
+  }, []);
+
+  // Scroll to top on detail/creation entry, and restore saved scroll when returning to logbook
+  useEffect(() => {
+    const savedY = activeView === 'logbook' ? (scrollPositionsRef.current.get('logbook') ?? 0) : 0;
+    window.scrollTo({ top: savedY, behavior: 'auto' });
+  }, [activeView, selectedDiveId]);
 
   // Lock body scroll & support Escape dismiss on Unsaved Changes modal
   useEffect(() => {
@@ -320,6 +335,9 @@ export function App() {
 
   const openDiveDetail = useCallback(
     (diveId: string) => {
+      if (activeViewRef.current === 'logbook') {
+        scrollPositionsRef.current.set('logbook', window.scrollY);
+      }
       setDraftFit(null);
       setSelectedDiveId(diveId);
       pushHistoryView('dive-detail', diveId);
@@ -529,6 +547,7 @@ export function App() {
 
       <PwaUpdateBanner
         isFormDirty={isFormDirty}
+        isOffline={isOffline}
         onSaveBeforeUpdate={() =>
           saveHandlerRef.current ? saveHandlerRef.current() : Promise.resolve(true)
         }

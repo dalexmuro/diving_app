@@ -1,10 +1,11 @@
 import { RefreshCw, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { usePreferences } from '../i18n/I18nContext';
 
 interface PwaUpdateBannerProps {
   isFormDirty: boolean;
+  isOffline?: boolean;
   onSaveBeforeUpdate?: () => Promise<boolean>;
 }
 
@@ -13,9 +14,21 @@ interface PwaUpdateBannerProps {
  * Never triggers an automatic reload; when a dive form has unsaved edits,
  * it explicitly prevents losing data and lets the user save first.
  */
-export function PwaUpdateBanner({ isFormDirty, onSaveBeforeUpdate }: PwaUpdateBannerProps) {
+export function PwaUpdateBanner({
+  isFormDirty,
+  isOffline = false,
+  onSaveBeforeUpdate,
+}: PwaUpdateBannerProps) {
   const { t } = usePreferences();
   const [updating, setUpdating] = useState(false);
+  const intervalRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (intervalRef.current != null) window.clearInterval(intervalRef.current);
+    },
+    [],
+  );
 
   const {
     needRefresh: [needRefresh, setNeedRefresh],
@@ -23,8 +36,9 @@ export function PwaUpdateBanner({ isFormDirty, onSaveBeforeUpdate }: PwaUpdateBa
   } = useRegisterSW({
     onRegisteredSW(_swUrl, registration) {
       if (!registration) return;
+      if (intervalRef.current != null) window.clearInterval(intervalRef.current);
       // Check for updates periodically (hourly) without forcing reload
-      window.setInterval(() => {
+      intervalRef.current = window.setInterval(() => {
         if (navigator.onLine) {
           void registration.update();
         }
@@ -34,7 +48,10 @@ export function PwaUpdateBanner({ isFormDirty, onSaveBeforeUpdate }: PwaUpdateBa
 
   if (!needRefresh) return null;
 
+  const blockedOfflineDirty = isFormDirty && isOffline;
+
   async function handleUpdate() {
+    if (blockedOfflineDirty) return;
     setUpdating(true);
     try {
       if (isFormDirty && onSaveBeforeUpdate) {
@@ -64,7 +81,7 @@ export function PwaUpdateBanner({ isFormDirty, onSaveBeforeUpdate }: PwaUpdateBa
       <div className="flex items-center gap-1.5 shrink-0">
         <button
           type="button"
-          disabled={updating}
+          disabled={updating || blockedOfflineDirty}
           onClick={() => void handleUpdate()}
           className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 active:bg-sky-700 disabled:opacity-50 text-white text-xs font-medium px-3 py-1.5 cursor-pointer"
         >

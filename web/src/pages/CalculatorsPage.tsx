@@ -34,20 +34,22 @@ export function CalculatorsPage() {
 
   return (
     <section className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+      <h1 className="text-[clamp(1.35rem,2.5vw,1.6rem)] font-semibold tracking-tight text-slate-900">
         {t('navCalculators')}
       </h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Nitrox Calculator */}
-        <div className="panel-surface p-5 space-y-4">
+        <div className="panel-surface p-4 sm:p-5 space-y-4">
           <h2 className="text-base font-semibold text-slate-900">{t('nitroxCalcTitle')}</h2>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <label className="space-y-1 text-xs font-medium text-slate-700">
               <span>{t('oxygenPct')}</span>
               <input
                 type="number"
+                inputMode="decimal"
+                step="any"
                 min="21"
                 max="100"
                 value={o2Pct}
@@ -59,7 +61,8 @@ export function CalculatorsPage() {
               <span>{t('maxPpo2')}</span>
               <input
                 type="number"
-                step="0.1"
+                inputMode="decimal"
+                step="any"
                 min="1.0"
                 max="1.6"
                 value={maxPpo2}
@@ -71,6 +74,8 @@ export function CalculatorsPage() {
               <span>{t('plannedDepth')} (m)</span>
               <input
                 type="number"
+                inputMode="decimal"
+                step="any"
                 min="0"
                 max="100"
                 value={plannedDepthM}

@@ -36,6 +36,27 @@ describe('Interactive dive profile geometry & >15 m/min red violations', () => {
     expect(snapped?.elapsedS).toBe(90);
     expect(snapped?.exceedsAscentLimit).toBe(true);
   });
+
+  it('handles binary-search edge cases for empty, single, and out-of-bounds ratios', () => {
+    expect(findNearestProfilePoint([], 0.5)).toBeNull();
+    const single = buildProfileGeometry(
+      [{ elapsedS: 0, depthM: 12, tempC: 20, ascentRateMMin: null }],
+      15,
+    );
+    expect(findNearestProfilePoint(single.points, 0.9)?.depthM).toBe(12);
+
+    const multi = buildProfileGeometry(
+      [
+        { elapsedS: 0, depthM: 0, tempC: 20, ascentRateMMin: null },
+        { elapsedS: 50, depthM: 15, tempC: 20, ascentRateMMin: null },
+        { elapsedS: 100, depthM: 0, tempC: 20, ascentRateMMin: null },
+      ],
+      15,
+    );
+    expect(findNearestProfilePoint(multi.points, -0.5)?.elapsedS).toBe(0);
+    expect(findNearestProfilePoint(multi.points, 1.5)?.elapsedS).toBe(100);
+    expect(findNearestProfilePoint(multi.points, 0.49)?.elapsedS).toBe(50);
+  });
 });
 
 describe('Logbook search and multi-criteria filtering', () => {

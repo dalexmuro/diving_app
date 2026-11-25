@@ -21,6 +21,7 @@ export function SitesPage({ isOffline }: SitesPageProps) {
   const [lng, setLng] = useState('');
 
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
 
@@ -98,6 +99,7 @@ export function SitesPage({ isOffline }: SitesPageProps) {
     setCountry(site.country ?? '');
     setLat(site.latitude != null ? String(site.latitude) : '');
     setLng(site.longitude != null ? String(site.longitude) : '');
+    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
   function resetForm() {
@@ -124,13 +126,24 @@ export function SitesPage({ isOffline }: SitesPageProps) {
 
   return (
     <section className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{t('navSites')}</h1>
+      <h1 className="text-[clamp(1.35rem,2.5vw,1.6rem)] font-semibold tracking-tight text-slate-900">
+        {t('navSites')}
+      </h1>
 
       {/* Interactive Map (online) with automatic fallback when offline */}
       {!isOffline && (
         <div className="panel-surface p-4 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-900">{t('siteMap')}</h2>
+            {selectedSiteId && (
+              <button
+                type="button"
+                onClick={resetForm}
+                className="text-xs font-medium text-slate-600 hover:text-slate-900 cursor-pointer"
+              >
+                {t('editingLabel')} · {t('cancel')}
+              </button>
+            )}
           </div>
           <div
             ref={mapContainerRef}
@@ -138,6 +151,7 @@ export function SitesPage({ isOffline }: SitesPageProps) {
           />
 
           <form
+            ref={formRef}
             onSubmit={(e) => void handleSaveSite(e)}
             className="grid grid-cols-1 sm:grid-cols-5 gap-2.5 pt-2"
           >

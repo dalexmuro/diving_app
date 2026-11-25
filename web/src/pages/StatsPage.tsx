@@ -48,7 +48,7 @@ export function StatsPage({ stats }: StatsPageProps) {
 
   return (
     <section className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+      <h1 className="text-[clamp(1.35rem,2.5vw,1.6rem)] font-semibold tracking-tight text-slate-900">
         {t('navStatistics')}
       </h1>
 
