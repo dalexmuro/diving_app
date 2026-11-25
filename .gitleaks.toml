@@ -12,13 +12,15 @@ tags = ["database", "credentials"]
 [[rules]]
 id = "suunto-api-credentials"
 description = "Suunto API Subscription Key or Client Secret"
-regex = '''(?i)(ocp-apim-subscription-key|suunto[_-]?(?:client[_-]?secret|subscription[_-]?key|api[_-]?key))\s*[:=]\s*['"]?[a-z0-9._-]{16,}['"]?'''
+regex = '''(?i)(?:ocp-apim-subscription-key|suunto[_-]?(?:client[_-]?secret|subscription[_-]?key|api[_-]?key))\s*[:=]\s*['"]?([a-z0-9._-]{16,})['"]?'''
+secretGroup = 1
 tags = ["suunto", "api-key"]
 
 [[rules]]
 id = "cloudflare-api-token"
 description = "Cloudflare API Token or Global Key"
-regex = '''(?i)(cloudflare[_-]?(?:api[_-]?token|api[_-]?key|secret))\s*[:=]\s*['"]?[a-z0-9_-]{20,}['"]?'''
+regex = '''(?i)(?:cloudflare[_-]?(?:api[_-]?token|api[_-]?key|secret))\s*[:=]\s*['"]?([a-z0-9_-]{20,})['"]?'''
+secretGroup = 1
 tags = ["cloudflare", "api-key"]
 
 [[rules]]
