@@ -244,6 +244,12 @@ export const TRANSLATIONS = {
     sitePopupDives: 'Inmersiones',
     sitePopupViewDives: 'Ver inmersiones →',
     resetMapView: 'Ver todos los sitios',
+    siteManualMode: 'Modo manual',
+    siteSearchMode: 'Modo búsqueda',
+    siteAddBtn: 'Agregar',
+    siteSearchPlaceholder: 'Buscar sitio de buceo o lugar...',
+    siteSavedCatalogBadge: 'Guardado',
+    siteAutoNumber: 'Auto',
   },
   fr: {
     appTitle: 'Diving App',
@@ -488,6 +494,12 @@ export const TRANSLATIONS = {
     sitePopupDives: 'Plongées',
     sitePopupViewDives: 'Voir les plongées →',
     resetMapView: 'Voir tous les sites',
+    siteManualMode: 'Mode manuel',
+    siteSearchMode: 'Mode recherche',
+    siteAddBtn: 'Ajouter',
+    siteSearchPlaceholder: 'Rechercher un site de plongée ou un lieu...',
+    siteSavedCatalogBadge: 'Enregistré',
+    siteAutoNumber: 'Auto',
   },
 } as const;
 

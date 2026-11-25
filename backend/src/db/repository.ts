@@ -241,6 +241,13 @@ function getSeasonFromIso(iso: string): 'winter' | 'spring' | 'summer' | 'autumn
 }
 
 export function createD1Repository(db: D1Database) {
+  async function getNextLogNumber(): Promise<number> {
+    const row = await db
+      .prepare('SELECT COALESCE(MAX(log_number), 0) AS max_num, COUNT(*) AS cnt FROM dives')
+      .first<{ max_num: number; cnt: number }>();
+    return Math.max(row?.max_num ?? 0, row?.cnt ?? 0) + 1;
+  }
+
   async function findOrCreateSite(params: {
     name: string;
     latitude?: number | null;
@@ -525,17 +532,18 @@ export function createD1Repository(db: D1Database) {
         await ensureCatalogEntriesFromDive({ computer_name: parsed.computerName });
       }
       const diveId = crypto.randomUUID();
+      const nextLogNumber = await getNextLogNumber();
 
       await db
         .prepare(
           `INSERT INTO dives (
             id, suunto_workout_key, fit_hash, fit_r2_key,
             started_at, ended_at, duration_s, computer_name,
-            dive_number_in_series, surface_time_s,
+            dive_number_in_series, surface_time_s, log_number,
             max_depth_m, avg_depth_m, min_temp_c, avg_temp_c,
             gas_type, o2_pct, he_pct, gf_low, gf_high,
             start_pressure_bar, end_pressure_bar, site_id
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           diveId,
@@ -548,6 +556,7 @@ export function createD1Repository(db: D1Database) {
           parsed.computerName,
           parsed.diveNumberInSeries,
           parsed.surfaceTimeS,
+          nextLogNumber,
           parsed.maxDepthM,
           parsed.avgDepthM,
           parsed.minTempC,
@@ -594,12 +603,16 @@ export function createD1Repository(db: D1Database) {
           : new Date().toISOString();
       const durationS = typeof patch.duration_s === 'number' ? patch.duration_s : 0;
       const maxDepthM = typeof patch.max_depth_m === 'number' ? patch.max_depth_m : 0;
+      const assignedLogNumber =
+        typeof patch.log_number === 'number' && Number.isFinite(patch.log_number)
+          ? Math.round(patch.log_number)
+          : await getNextLogNumber();
 
       await db
         .prepare(
           `INSERT INTO dives (
-            id, fit_hash, fit_r2_key, started_at, duration_s, max_depth_m, site_id, user_edited_fields_json
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, '[]')`,
+            id, fit_hash, fit_r2_key, started_at, duration_s, max_depth_m, log_number, site_id, user_edited_fields_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '[]')`,
         )
         .bind(
           id,
@@ -608,6 +621,7 @@ export function createD1Repository(db: D1Database) {
           startedAt,
           durationS,
           maxDepthM,
+          assignedLogNumber,
           siteId,
         )
         .run();
@@ -616,7 +630,11 @@ export function createD1Repository(db: D1Database) {
         await insertSamples(id, patch.samples);
       }
 
-      return (await this.updateDive(id, { ...patch, site_id: siteId ?? undefined }))!;
+      return (await this.updateDive(id, {
+        ...patch,
+        log_number: assignedLogNumber,
+        site_id: siteId ?? undefined,
+      }))!;
     },
 
     async updateDive(id: string, patch: DivePatch): Promise<DiveDetail | null> {
@@ -662,13 +680,17 @@ export function createD1Repository(db: D1Database) {
           cleanStops.reduce((sum, s) => sum + s.duration_min, 0) * 60,
         );
       }
-      if (typeof patch.site_name === 'string' && patch.site_name.trim()) {
-        normalized.site_id = await findOrCreateSite({
-          name: patch.site_name,
-          latitude: patch.site_latitude,
-          longitude: patch.site_longitude,
-          country: patch.site_country,
-        });
+      if (typeof patch.site_name === 'string') {
+        if (patch.site_name.trim()) {
+          normalized.site_id = await findOrCreateSite({
+            name: patch.site_name,
+            latitude: patch.site_latitude,
+            longitude: patch.site_longitude,
+            country: patch.site_country,
+          });
+        } else {
+          normalized.site_id = null;
+        }
       }
 
       const editedSet = new Set<string>(JSON.parse(current.user_edited_fields_json || '[]') as string[]);
