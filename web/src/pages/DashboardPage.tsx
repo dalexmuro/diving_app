@@ -1,4 +1,4 @@
-import { ArrowRight, Plus } from 'lucide-react';
+import { ArrowRight, Compass, Plus } from 'lucide-react';
 import { DashboardCharts } from '../components/DashboardCharts';
 import { usePreferences } from '../i18n/I18nContext';
 import { formatDepth, formatDuration, formatSac, formatTemp } from '../services/units';
@@ -25,7 +25,7 @@ export function DashboardPage({
   return (
     <section className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-[clamp(1.35rem,2.5vw,1.6rem)] font-semibold tracking-tight text-slate-900">
+        <h1 className="text-[clamp(1.45rem,2.6vw,1.75rem)] font-bold tracking-tight text-slate-900">
           {t('navDashboard')}
         </h1>
         {!isOffline && (
@@ -90,16 +90,23 @@ export function DashboardPage({
 
       {/* Latest Dive Highlight */}
       {latest ? (
-        <div className="panel-surface p-4 sm:p-5 space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-base font-semibold text-slate-900">{t('latestDive')}</h2>
+        <div className="panel-surface p-5 sm:p-6 space-y-4">
+          <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-200/80">
+            <div className="flex items-center gap-2.5">
+              <span className="p-2 rounded-lg bg-sky-100 text-sky-700 inline-flex items-center justify-center">
+                <Compass className="w-4 h-4 sm:w-5 sm:h-5" />
+              </span>
+              <h2 className="text-base sm:text-lg font-bold tracking-tight text-slate-900">
+                {t('latestDive')}
+              </h2>
+            </div>
             <button
               type="button"
               onClick={() => onSelectDive(latest.id)}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-sky-700 hover:text-sky-800 px-2 py-1 rounded-md hover:bg-sky-50 cursor-pointer"
+              className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-sky-700 hover:text-sky-800 px-3 py-1.5 rounded-lg bg-sky-50 hover:bg-sky-100 transition-colors cursor-pointer"
             >
               <span>{t('diveProfile')}</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              <ArrowRight className="w-4 h-4" />
             </button>
           </div>
 

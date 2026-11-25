@@ -881,10 +881,14 @@ export function DiveDetailPage({
       {!isEditing ? (
         <div className="space-y-5">
           {/* READ-ONLY SECTION 1: Location & Dive Center */}
-          <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-5 space-y-4">
-            <div className="flex items-center gap-2 border-b border-sky-200/70 pb-2.5">
-              <MapPin className="w-4 h-4 text-sky-700" />
-              <h2 className="text-sm font-semibold text-slate-900">{t('sectionLocationCenter')}</h2>
+          <div className="rounded-xl border border-sky-200/90 bg-sky-50/55 p-5 space-y-4">
+            <div className="flex items-center gap-2.5 border-b border-sky-200/70 pb-3">
+              <span className="p-1.5 rounded-lg bg-sky-100 text-sky-700 inline-flex items-center justify-center">
+                <MapPin className="w-4 h-4 sm:w-5 sm:h-5" />
+              </span>
+              <h2 className="text-base font-bold tracking-tight text-slate-900">
+                {t('sectionLocationCenter')}
+              </h2>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -913,10 +917,14 @@ export function DiveDetailPage({
           </div>
 
           {/* READ-ONLY SECTION 2: Basic Information */}
-          <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-            <div className="flex items-center gap-2 border-b border-slate-200 pb-2.5">
-              <Compass className="w-4 h-4 text-sky-600" />
-              <h2 className="text-sm font-semibold text-slate-900">{t('sectionBasicInfo')}</h2>
+          <div className="rounded-xl border border-sky-200/75 bg-sky-50/25 p-5 space-y-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+            <div className="flex items-center gap-2.5 border-b border-sky-200/70 pb-3">
+              <span className="p-1.5 rounded-lg bg-sky-100 text-sky-700 inline-flex items-center justify-center">
+                <Compass className="w-4 h-4 sm:w-5 sm:h-5" />
+              </span>
+              <h2 className="text-base font-bold tracking-tight text-slate-900">
+                {t('sectionBasicInfo')}
+              </h2>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -1027,10 +1035,14 @@ export function DiveDetailPage({
           </div>
 
           {/* READ-ONLY SECTION 3: Complementary Information */}
-          <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-5 space-y-5">
-            <div className="flex items-center gap-2 border-b border-slate-200 pb-2.5">
-              <SlidersHorizontal className="w-4 h-4 text-slate-600" />
-              <h2 className="text-sm font-semibold text-slate-900">{t('sectionExtraInfo')}</h2>
+          <div className="rounded-xl border border-sky-200/80 bg-sky-50/40 p-5 space-y-5">
+            <div className="flex items-center gap-2.5 border-b border-sky-200/70 pb-3">
+              <span className="p-1.5 rounded-lg bg-sky-100 text-sky-700 inline-flex items-center justify-center">
+                <SlidersHorizontal className="w-4 h-4 sm:w-5 sm:h-5" />
+              </span>
+              <h2 className="text-base font-bold tracking-tight text-slate-900">
+                {t('sectionExtraInfo')}
+              </h2>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -1183,10 +1195,14 @@ export function DiveDetailPage({
           className="space-y-5"
         >
         {/* SECTION 1: Location & Dive Center */}
-        <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-5 space-y-4">
-          <div className="flex items-center gap-2 border-b border-sky-200/70 pb-2.5">
-            <MapPin className="w-4 h-4 text-sky-700" />
-            <h2 className="text-sm font-semibold text-slate-900">{t('sectionLocationCenter')}</h2>
+        <div className="rounded-xl border border-sky-200/90 bg-sky-50/55 p-5 space-y-4">
+          <div className="flex items-center gap-2.5 border-b border-sky-200/70 pb-3">
+            <span className="p-1.5 rounded-lg bg-sky-100 text-sky-700 inline-flex items-center justify-center">
+              <MapPin className="w-4 h-4 sm:w-5 sm:h-5" />
+            </span>
+            <h2 className="text-base font-bold tracking-tight text-slate-900">
+              {t('sectionLocationCenter')}
+            </h2>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
@@ -1378,10 +1394,14 @@ export function DiveDetailPage({
         </div>
 
         {/* SECTION 2: Basic Information */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-          <div className="flex items-center gap-2 border-b border-slate-200 pb-2.5">
-            <Compass className="w-4 h-4 text-sky-600" />
-            <h2 className="text-sm font-semibold text-slate-900">{t('sectionBasicInfo')}</h2>
+        <div className="rounded-xl border border-sky-200/75 bg-sky-50/25 p-5 space-y-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+          <div className="flex items-center gap-2.5 border-b border-sky-200/70 pb-3">
+            <span className="p-1.5 rounded-lg bg-sky-100 text-sky-700 inline-flex items-center justify-center">
+              <Compass className="w-4 h-4 sm:w-5 sm:h-5" />
+            </span>
+            <h2 className="text-base font-bold tracking-tight text-slate-900">
+              {t('sectionBasicInfo')}
+            </h2>
           </div>
 
           {/* Row 1: Auto Dive #, Date, Start Time, End Time, Duration */}
@@ -1615,10 +1635,14 @@ export function DiveDetailPage({
         </div>
 
         {/* SECTION 3: Complementary Information */}
-        <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-5 space-y-5">
-          <div className="flex items-center gap-2 border-b border-slate-200 pb-2.5">
-            <SlidersHorizontal className="w-4 h-4 text-slate-600" />
-            <h2 className="text-sm font-semibold text-slate-900">{t('sectionExtraInfo')}</h2>
+        <div className="rounded-xl border border-sky-200/80 bg-sky-50/40 p-5 space-y-5">
+          <div className="flex items-center gap-2.5 border-b border-sky-200/70 pb-3">
+            <span className="p-1.5 rounded-lg bg-sky-100 text-sky-700 inline-flex items-center justify-center">
+              <SlidersHorizontal className="w-4 h-4 sm:w-5 sm:h-5" />
+            </span>
+            <h2 className="text-base font-bold tracking-tight text-slate-900">
+              {t('sectionExtraInfo')}
+            </h2>
           </div>
 
           {/* Computer, Buddies & Gear */}

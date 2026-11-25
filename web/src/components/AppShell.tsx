@@ -4,7 +4,6 @@ import {
   Calculator,
   Compass,
   LayoutDashboard,
-  LogOut,
   Settings,
   Wifi,
   WifiOff,
@@ -51,10 +50,9 @@ export function AppShell({
   isOffline,
   userEmail,
   onNavigate,
-  onSignOut,
   children,
 }: AppShellProps) {
-  const { language, unitSystem, t, setPreferences } = usePreferences();
+  const { t } = usePreferences();
   const keyboardOpen = useVirtualKeyboardOpen();
 
   const primaryTabs: Array<{ id: AppView; label: string; icon: typeof LayoutDashboard }> = [
@@ -128,31 +126,19 @@ export function AppShell({
                       : 'text-slate-300 hover:bg-slate-800/70 hover:text-white active:bg-slate-800'
                   }`}
                 >
-                  <Icon className="w-4 h-4 shrink-0" />
+                  <Icon className="w-5 h-5 shrink-0" />
                 </button>
               );
             })}
           </div>
         </nav>
-
-        <div className="p-2 border-t border-slate-800/80 flex flex-col items-center gap-2">
-          <button
-            type="button"
-            onClick={onSignOut}
-            aria-label={t('signOut')}
-            title={t('signOut')}
-            className="p-2 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 cursor-pointer touch-target flex items-center justify-center"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
-        </div>
       </aside>
 
-      {/* Desktop Expanded Navigation Sidebar (>= 1024px) — preserved */}
+      {/* Desktop Expanded Navigation Sidebar (>= 1024px) */}
       <aside className="hidden lg:flex lg:w-60 lg:flex-col lg:fixed lg:inset-y-0 bg-[#0b192c] text-slate-100 border-r border-slate-800">
         <div className="flex items-center gap-2.5 px-5 h-16 border-b border-slate-800/80">
-          <img src="/icon.svg" alt="" className="w-7 h-7 rounded-lg" />
-          <span className="font-semibold tracking-tight text-sm text-white">{t('appTitle')}</span>
+          <img src="/icon.svg" alt="" className="w-8 h-8 rounded-lg" />
+          <span className="font-bold tracking-tight text-base text-white">{t('appTitle')}</span>
         </div>
 
         <nav className="flex-1 px-3 py-4 space-y-6 overflow-y-auto" aria-label="Main">
@@ -166,13 +152,13 @@ export function AppShell({
                   type="button"
                   aria-current={active ? 'page' : undefined}
                   onClick={() => onNavigate(item.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
                     active
-                      ? 'bg-sky-600 text-white'
-                      : 'text-slate-300 hover:bg-slate-800/70 hover:text-white'
+                      ? 'bg-sky-600 text-white shadow-xs'
+                      : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'
                   }`}
                 >
-                  <Icon className="w-4 h-4 shrink-0" />
+                  <Icon className="w-5 h-5 shrink-0" />
                   <span>{item.label}</span>
                 </button>
               );
@@ -189,13 +175,13 @@ export function AppShell({
                   type="button"
                   aria-current={active ? 'page' : undefined}
                   onClick={() => onNavigate(item.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
                     active
-                      ? 'bg-sky-600 text-white'
-                      : 'text-slate-300 hover:bg-slate-800/70 hover:text-white'
+                      ? 'bg-sky-600 text-white shadow-xs'
+                      : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'
                   }`}
                 >
-                  <Icon className="w-4 h-4 shrink-0" />
+                  <Icon className="w-5 h-5 shrink-0" />
                   <span>{item.label}</span>
                 </button>
               );
@@ -203,36 +189,11 @@ export function AppShell({
           </div>
         </nav>
 
-        <div className="p-4 border-t border-slate-800/80 space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={() => setPreferences({ language: language === 'es' ? 'fr' : 'es' })}
-              className="px-2.5 py-1 rounded-md border border-slate-700 text-xs font-medium text-slate-200 hover:bg-slate-800 cursor-pointer"
-            >
-              {language.toUpperCase()}
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                setPreferences({ unitSystem: unitSystem === 'metric' ? 'imperial' : 'metric' })
-              }
-              className="px-2.5 py-1 rounded-md border border-slate-700 text-xs font-medium text-slate-200 hover:bg-slate-800 cursor-pointer"
-            >
-              {unitSystem === 'metric' ? 'Metric' : 'Imperial'}
-            </button>
-            <button
-              type="button"
-              onClick={onSignOut}
-              aria-label={t('signOut')}
-              title={t('signOut')}
-              className="p-1.5 rounded-md border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 cursor-pointer"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-            </button>
+        {userEmail && (
+          <div className="px-4 py-3 border-t border-slate-800/80">
+            <p className="text-xs text-slate-400 truncate">{userEmail}</p>
           </div>
-          {userEmail && <p className="text-xs text-slate-400 truncate">{userEmail}</p>}
-        </div>
+        )}
       </aside>
 
       {/* Main Content Workspace */}

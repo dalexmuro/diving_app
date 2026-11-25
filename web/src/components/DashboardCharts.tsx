@@ -1,4 +1,14 @@
-import { Leaf, Snowflake, Sprout, Sun } from 'lucide-react';
+import {
+  BarChart3,
+  Gauge,
+  Layers,
+  Leaf,
+  Snowflake,
+  Sprout,
+  Sun,
+  Thermometer,
+  TrendingUp,
+} from 'lucide-react';
 import { useMemo } from 'react';
 import { usePreferences } from '../i18n/I18nContext';
 import { buildCumulativeHoursSeries } from '../services/calculators';
@@ -140,8 +150,15 @@ export function DashboardCharts({ stats }: DashboardChartsProps) {
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
       {/* 1. Dives per Month — Gradient Vertical Column Chart */}
       <div className="panel-surface p-5 space-y-3">
-        <div className="flex items-baseline justify-between gap-2">
-          <h2 className="text-base font-semibold text-slate-900">{t('divesByMonth')}</h2>
+        <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-200/80">
+          <div className="flex items-center gap-2.5">
+            <span className="p-1.5 rounded-lg bg-sky-100 text-sky-700 inline-flex items-center justify-center">
+              <BarChart3 className="w-4 h-4 sm:w-5 sm:h-5" />
+            </span>
+            <h2 className="text-base sm:text-[17px] font-bold tracking-tight text-slate-900">
+              {t('divesByMonth')}
+            </h2>
+          </div>
           <span className="text-xs font-medium text-slate-500 tabular-telemetry">
             {stats.totalDives}{' '}
             {stats.totalDives === 1 ? t('diveCountSingular') : t('diveCountPlural')}
@@ -226,8 +243,15 @@ export function DashboardCharts({ stats }: DashboardChartsProps) {
 
       {/* 2. Accumulated Underwater Hours — Smooth Gradient Area Chart */}
       <div className="panel-surface p-5 space-y-3">
-        <div className="flex items-baseline justify-between gap-2">
-          <h2 className="text-base font-semibold text-slate-900">{t('accumulatedHours')}</h2>
+        <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-200/80">
+          <div className="flex items-center gap-2.5">
+            <span className="p-1.5 rounded-lg bg-teal-100 text-teal-700 inline-flex items-center justify-center">
+              <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5" />
+            </span>
+            <h2 className="text-base sm:text-[17px] font-bold tracking-tight text-slate-900">
+              {t('accumulatedHours')}
+            </h2>
+          </div>
           {cumulative.length > 0 && (
             <span className="text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200/80 rounded-full px-2.5 py-0.5 tabular-telemetry">
               {cumulative[cumulative.length - 1].cumulativeHours} h
@@ -318,7 +342,14 @@ export function DashboardCharts({ stats }: DashboardChartsProps) {
 
       {/* 3. Depth Range Distribution — Ocean-Depth Color Gradient Bars */}
       <div className="panel-surface p-5 space-y-4">
-        <h2 className="text-base font-semibold text-slate-900">{t('depthDistribution')}</h2>
+        <div className="flex items-center gap-2.5 pb-2.5 border-b border-slate-200/80">
+          <span className="p-1.5 rounded-lg bg-sky-100 text-sky-700 inline-flex items-center justify-center">
+            <Layers className="w-4 h-4 sm:w-5 sm:h-5" />
+          </span>
+          <h2 className="text-base sm:text-[17px] font-bold tracking-tight text-slate-900">
+            {t('depthDistribution')}
+          </h2>
+        </div>
         <div className="space-y-3.5">
           {stats.depthBuckets.map((b, idx) => {
             const pct = stats.totalDives > 0 ? Math.round((b.count / stats.totalDives) * 100) : 0;
@@ -348,7 +379,14 @@ export function DashboardCharts({ stats }: DashboardChartsProps) {
       {/* 4. Seasonal Water Temperature & Gas Mix Donut */}
       <div className="panel-surface p-5 space-y-5">
         <div className="space-y-3">
-          <h2 className="text-base font-semibold text-slate-900">{t('seasonalTemp')}</h2>
+          <div className="flex items-center gap-2.5 pb-2 border-b border-slate-200/80">
+            <span className="p-1.5 rounded-lg bg-amber-100 text-amber-700 inline-flex items-center justify-center">
+              <Thermometer className="w-4 h-4 sm:w-5 sm:h-5" />
+            </span>
+            <h2 className="text-base sm:text-[17px] font-bold tracking-tight text-slate-900">
+              {t('seasonalTemp')}
+            </h2>
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
             {stats.tempBySeason.map((s) => {
               const meta = seasonMeta(s.season);
@@ -372,7 +410,14 @@ export function DashboardCharts({ stats }: DashboardChartsProps) {
         </div>
 
         <div className="space-y-3 pt-4 border-t border-slate-200/80">
-          <h2 className="text-base font-semibold text-slate-900">{t('gasDistribution')}</h2>
+          <div className="flex items-center gap-2.5">
+            <span className="p-1.5 rounded-lg bg-sky-100 text-sky-700 inline-flex items-center justify-center">
+              <Gauge className="w-4 h-4 sm:w-5 sm:h-5" />
+            </span>
+            <h2 className="text-base sm:text-[17px] font-bold tracking-tight text-slate-900">
+              {t('gasDistribution')}
+            </h2>
+          </div>
           <div className="flex flex-wrap items-center gap-6">
             <div className="relative w-28 h-28 shrink-0">
               <svg
