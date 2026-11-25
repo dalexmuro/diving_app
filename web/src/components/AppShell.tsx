@@ -1,5 +1,5 @@
 import {
-  Award,
+  Backpack,
   BookOpen,
   Calculator,
   Compass,
@@ -63,8 +63,8 @@ export function AppShell({
     { id: 'sites', label: t('navSites'), icon: Compass },
   ];
 
-  const secondaryTabs: Array<{ id: AppView; label: string; icon: typeof Award }> = [
-    { id: 'gear-certs', label: t('navGearCerts'), icon: Award },
+  const secondaryTabs: Array<{ id: AppView; label: string; icon: typeof Backpack }> = [
+    { id: 'gear-certs', label: t('navGearCerts'), icon: Backpack },
     { id: 'calculators', label: t('navCalculators'), icon: Calculator },
     { id: 'settings', label: t('navSettings'), icon: Settings },
   ];

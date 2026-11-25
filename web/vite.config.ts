@@ -12,8 +12,8 @@ export default defineConfig({
       includeAssets: ['icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'],
       manifest: {
         id: '/',
-        name: 'Diving App — Suunto Logbook & Telemetry',
-        short_name: 'Diving App',
+        name: 'Journal de plongée — Diario de buceo',
+        short_name: 'Plongée',
         description: 'Offline-capable diving logbook and telemetry analytics',
         theme_color: '#0b192c',
         background_color: '#0b192c',

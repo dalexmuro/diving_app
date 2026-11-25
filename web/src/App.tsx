@@ -160,9 +160,10 @@ export function App() {
     meta.setAttribute('content', isDarkSurface ? '#0b192c' : '#ffffff');
   }, [authChecked, authenticated, offlineBrowse]);
 
-  // Keep <html lang> in sync with selected language
+  // Keep <html lang> and document.title in sync with selected language
   useEffect(() => {
     document.documentElement.lang = language;
+    document.title = TRANSLATIONS[language].appTitle;
   }, [language]);
 
   // Persist navigation state across Android rotation / foldable transitions / tab reclaim

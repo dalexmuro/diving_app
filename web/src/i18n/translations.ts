@@ -2,7 +2,7 @@ import { type Language, type RatingScale } from '../types/domain';
 
 export const TRANSLATIONS = {
   es: {
-    appTitle: 'Diving App',
+    appTitle: 'Diario de buceo',
     navDashboard: 'Dashboard',
     navLogbook: 'Bitácora',
     navStatistics: 'Estadísticas',
@@ -252,7 +252,7 @@ export const TRANSLATIONS = {
     siteAutoNumber: 'Auto',
   },
   fr: {
-    appTitle: 'Diving App',
+    appTitle: 'Journal de plongée',
     navDashboard: 'Tableau de bord',
     navLogbook: 'Carnet',
     navStatistics: 'Statistiques',
