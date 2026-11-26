@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Award,
   Check,
+  ExternalLink,
   FileDown,
   IdCard,
   MapPin,
@@ -186,11 +187,24 @@ export function ProfilePage({ isOffline }: ProfilePageProps) {
             <div className="flex flex-wrap items-center gap-3">
               <div>
                 <p className="text-lg font-bold text-slate-900">{profile?.full_name || '—'}</p>
-                {profile?.license_number && (
-                  <p className="text-sm font-semibold text-sky-800 tabular-telemetry mt-0.5">
-                    {t('licenseNumber')}: {profile.license_number}
-                  </p>
-                )}
+                {profile?.license_number &&
+                  (profile.ffessm_info_url ? (
+                    <a
+                      href={profile.ffessm_info_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-sm font-semibold text-sky-700 hover:text-sky-900 underline decoration-sky-300 hover:decoration-sky-600 underline-offset-2 tabular-telemetry mt-0.5 transition-colors"
+                    >
+                      <span>
+                        {t('licenseNumber')}: {profile.license_number}
+                      </span>
+                      <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                    </a>
+                  ) : (
+                    <p className="text-sm font-semibold text-sky-800 tabular-telemetry mt-0.5">
+                      {t('licenseNumber')}: {profile.license_number}
+                    </p>
+                  ))}
               </div>
               {profile?.valid_until && (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-semibold text-emerald-800 tabular-telemetry md:ml-auto">
@@ -286,7 +300,7 @@ export function ProfilePage({ isOffline }: ProfilePageProps) {
                 aria-label={t('licenseQrHint')}
               >
                 <img
-                  src={apiClient.getLicenseQrUrl()}
+                  src={`${apiClient.getLicenseQrUrl()}?v=${encodeURIComponent(profile.last_synced_at || '1')}`}
                   alt={t('licenseTitle')}
                   className="w-36 h-36 sm:w-40 sm:h-40 object-contain"
                 />
@@ -432,7 +446,7 @@ export function ProfilePage({ isOffline }: ProfilePageProps) {
               </button>
             </div>
             <img
-              src={apiClient.getLicenseQrUrl()}
+              src={`${apiClient.getLicenseQrUrl()}?v=${encodeURIComponent(profile.last_synced_at || '1')}`}
               alt={t('licenseTitle')}
               className="w-64 h-64 sm:w-72 sm:h-72 object-contain"
             />

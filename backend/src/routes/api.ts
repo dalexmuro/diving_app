@@ -1,3 +1,4 @@
+import { renderSVG } from 'uqr';
 import {
   type AppRepository,
   type DivePatch,
@@ -574,10 +575,8 @@ export async function handleApiRoutes(params: {
 
   // --- Diver Profile & License ---
   if (method === 'GET' && path === '/api/profile') {
-    const p = await repo.getProfile();
-    return Response.json({
-      profile: { ...p, ffessm_info_url: p.ffessm_info_url ? 'configured' : null },
-    });
+    const profile = await repo.getProfile();
+    return Response.json({ profile });
   }
   if (method === 'POST' && path === '/api/profile/sync-ffessm') {
     const current = await repo.getProfile();
@@ -601,6 +600,13 @@ export async function handleApiRoutes(params: {
     const html = await res.text();
     const parsed = parseFfessmInfoHtml(html);
 
+    // Regenerate official license QR SVG in R2 whenever syncing from FFESSM
+    const qrKey = 'profile/license-qr.svg';
+    const qrSvg = renderSVG(targetUrl, { border: 2 });
+    await bucket.put(qrKey, new TextEncoder().encode(qrSvg), {
+      httpMetadata: { contentType: 'image/svg+xml' },
+    });
+
     const updatedProfile = await repo.updateProfile({
       full_name: parsed.fullName ?? current.full_name,
       birth_date: parsed.birthDate ?? current.birth_date,
@@ -614,6 +620,7 @@ export async function handleApiRoutes(params: {
       insurance: parsed.insurance ?? current.insurance,
       insurance_valid_until: parsed.insuranceValidUntil ?? current.insurance_valid_until,
       medical_cert_status: parsed.medicalCertStatus ?? current.medical_cert_status,
+      license_qr_r2_key: qrKey,
       ffessm_info_url: targetUrl,
       last_synced_at: new Date().toISOString(),
     });
@@ -662,10 +669,7 @@ export async function handleApiRoutes(params: {
 
     const certifications = await repo.listCertifications();
     return Response.json({
-      profile: {
-        ...updatedProfile,
-        ffessm_info_url: updatedProfile.ffessm_info_url ? 'configured' : null,
-      },
+      profile: updatedProfile,
       certifications,
       newCertificationsCount,
     });
