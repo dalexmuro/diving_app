@@ -200,11 +200,15 @@ export interface DiverProfile {
   club_number: string | null;
   license_category: string | null;
   insurance: string | null;
+  insurance_valid_until: string | null;
+  medical_cert_status: string | null;
   valid_from: string | null;
   valid_until: string | null;
   license_pdf_r2_key: string | null;
   license_pdf_filename: string | null;
   license_qr_r2_key: string | null;
+  ffessm_info_url: string | null;
+  last_synced_at: string | null;
 }
 
 export interface GlobalStats {

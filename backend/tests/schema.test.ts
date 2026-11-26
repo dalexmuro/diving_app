@@ -18,7 +18,9 @@ const migrationSql =
   '\n' +
   readFileSync(resolve(here, '../migrations/0006_certifications_location_and_pdf.sql'), 'utf8') +
   '\n' +
-  readFileSync(resolve(here, '../migrations/0007_diver_profile.sql'), 'utf8');
+  readFileSync(resolve(here, '../migrations/0007_diver_profile.sql'), 'utf8') +
+  '\n' +
+  readFileSync(resolve(here, '../migrations/0008_ffessm_sync.sql'), 'utf8');
 
 describe('D1 schema migrations (0001 + 0002)', () => {
   it('creates all expected tables and default user settings', () => {

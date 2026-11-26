@@ -17,6 +17,11 @@ import {
   verifyJwt,
 } from '../middleware/auth';
 import {
+  isAllowedFfessmUrl,
+  parseFfessmAttestationPdf,
+  parseFfessmInfoHtml,
+} from '../services/ffessmSync';
+import {
   type R2Archiver,
   type SuuntoEnv,
   buildSuuntoAuthorizeUrl,
@@ -511,8 +516,26 @@ export async function handleApiRoutes(params: {
       }
       const key = `certs/${id}.pdf`;
       await bucket.put(key, pdfBytes, { httpMetadata: { contentType: 'application/pdf' } });
-      const certification = await repo.setCertificationPdf(id, key, fileName);
-      return Response.json({ certification });
+      const parsed = await parseFfessmAttestationPdf(pdfBytes).catch(() => null);
+      const nextAgency = parsed?.structure
+        ? `FFESSM · ${parsed.structure}`
+        : existing.agency;
+      const nextLevel =
+        parsed?.level && parsed.level.length > existing.level.length
+          ? parsed.level
+          : existing.level;
+      const nextLocation = parsed?.location || existing.location;
+      const nextIssuedDate = parsed?.issuedDate || existing.issued_date;
+      const certification = await repo.upsertCertification({
+        id,
+        agency: nextAgency,
+        level: nextLevel,
+        location: nextLocation,
+        issued_date: nextIssuedDate,
+        pdf_r2_key: key,
+        pdf_filename: fileName,
+      });
+      return Response.json({ certification, parsed });
     }
   }
   const certIdMatch = path.match(/^\/api\/certifications\/([^/]+)$/);
@@ -551,7 +574,101 @@ export async function handleApiRoutes(params: {
 
   // --- Diver Profile & License ---
   if (method === 'GET' && path === '/api/profile') {
-    return Response.json({ profile: await repo.getProfile() });
+    const p = await repo.getProfile();
+    return Response.json({
+      profile: { ...p, ffessm_info_url: p.ffessm_info_url ? 'configured' : null },
+    });
+  }
+  if (method === 'POST' && path === '/api/profile/sync-ffessm') {
+    const current = await repo.getProfile();
+    const body = (await request.json().catch(() => ({}))) as { url?: string };
+    const targetUrl = body.url?.trim() || current.ffessm_info_url || '';
+    if (!targetUrl || !isAllowedFfessmUrl(targetUrl)) {
+      return Response.json(
+        { error: 'Valid FFESSM InfoLicencie URL is not configured' },
+        { status: 400 },
+      );
+    }
+    const res = await fetcher(targetUrl, {
+      headers: { 'User-Agent': 'DivingLogbook/1.0 (+Cloudflare-Workers)' },
+    });
+    if (!res.ok) {
+      return Response.json(
+        { error: `FFESSM fetch failed (${res.status})` },
+        { status: 502 },
+      );
+    }
+    const html = await res.text();
+    const parsed = parseFfessmInfoHtml(html);
+
+    const updatedProfile = await repo.updateProfile({
+      full_name: parsed.fullName ?? current.full_name,
+      birth_date: parsed.birthDate ?? current.birth_date,
+      federation: parsed.federation,
+      license_number: parsed.licenseNumber ?? current.license_number,
+      license_category: parsed.licenseCategory ?? current.license_category,
+      valid_from: parsed.validFrom ?? current.valid_from,
+      valid_until: parsed.validUntil ?? current.valid_until,
+      club_name: parsed.clubName ?? current.club_name,
+      club_number: parsed.clubNumber ?? current.club_number,
+      insurance: parsed.insurance ?? current.insurance,
+      insurance_valid_until: parsed.insuranceValidUntil ?? current.insurance_valid_until,
+      medical_cert_status: parsed.medicalCertStatus ?? current.medical_cert_status,
+      ffessm_info_url: targetUrl,
+      last_synced_at: new Date().toISOString(),
+    });
+
+    // Reconcile certifications from FFESSM brevets (preserving existing agency & R2 PDFs)
+    const existingCerts = await repo.listCertifications();
+    const norm = (s: string) =>
+      s
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+
+    let newCertificationsCount = 0;
+    for (const brevet of parsed.brevets) {
+      const bNorm = norm(brevet.level);
+      const matched = existingCerts.find((c) => {
+        const cNorm = norm(c.level);
+        const levelMatch =
+          cNorm === bNorm || cNorm.startsWith(`${bNorm} `) || cNorm.startsWith(`${bNorm}/`) || bNorm.startsWith(`${cNorm} `);
+        if (brevet.issuedDate && c.issued_date) {
+          return levelMatch && c.issued_date === brevet.issuedDate;
+        }
+        return levelMatch;
+      });
+      if (matched) {
+        await repo.upsertCertification({
+          id: matched.id,
+          agency: matched.agency,
+          level: matched.level,
+          location: brevet.location ?? matched.location,
+          issued_date: brevet.issuedDate ?? matched.issued_date,
+          pdf_r2_key: matched.pdf_r2_key,
+          pdf_filename: matched.pdf_filename,
+        });
+      } else {
+        await repo.upsertCertification({
+          agency: '',
+          level: brevet.level,
+          location: brevet.location,
+          issued_date: brevet.issuedDate,
+        });
+        newCertificationsCount++;
+      }
+    }
+
+    const certifications = await repo.listCertifications();
+    return Response.json({
+      profile: {
+        ...updatedProfile,
+        ffessm_info_url: updatedProfile.ffessm_info_url ? 'configured' : null,
+      },
+      certifications,
+      newCertificationsCount,
+    });
   }
   if (method === 'PATCH' && path === '/api/profile') {
     const body = (await request.json().catch(() => null)) as Partial<DiverProfileRecord> | null;

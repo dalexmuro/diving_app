@@ -161,11 +161,15 @@ export interface DiverProfileRecord {
   club_number: string | null;
   license_category: string | null;
   insurance: string | null;
+  insurance_valid_until: string | null;
+  medical_cert_status: string | null;
   valid_from: string | null;
   valid_until: string | null;
   license_pdf_r2_key: string | null;
   license_pdf_filename: string | null;
   license_qr_r2_key: string | null;
+  ffessm_info_url: string | null;
+  last_synced_at: string | null;
 }
 
 export interface SuuntoTokenRecord {
@@ -1064,8 +1068,9 @@ export function createD1Repository(db: D1Database) {
       const row = await db
         .prepare(
           `SELECT full_name, birth_date, federation, license_number, club_name, club_number,
-                  license_category, insurance, valid_from, valid_until,
-                  license_pdf_r2_key, license_pdf_filename, license_qr_r2_key
+                  license_category, insurance, insurance_valid_until, medical_cert_status,
+                  valid_from, valid_until, license_pdf_r2_key, license_pdf_filename,
+                  license_qr_r2_key, ffessm_info_url, last_synced_at
            FROM diver_profile WHERE id = 1`,
         )
         .first<DiverProfileRecord>();
@@ -1079,11 +1084,15 @@ export function createD1Repository(db: D1Database) {
           club_number: null,
           license_category: null,
           insurance: null,
+          insurance_valid_until: null,
+          medical_cert_status: null,
           valid_from: null,
           valid_until: null,
           license_pdf_r2_key: null,
           license_pdf_filename: null,
           license_qr_r2_key: null,
+          ffessm_info_url: null,
+          last_synced_at: null,
         }
       );
     },
@@ -1103,6 +1112,14 @@ export function createD1Repository(db: D1Database) {
             ? patch.license_category?.trim() || null
             : cur.license_category,
         insurance: patch.insurance !== undefined ? patch.insurance?.trim() || null : cur.insurance,
+        insurance_valid_until:
+          patch.insurance_valid_until !== undefined
+            ? patch.insurance_valid_until?.trim() || null
+            : cur.insurance_valid_until,
+        medical_cert_status:
+          patch.medical_cert_status !== undefined
+            ? patch.medical_cert_status?.trim() || null
+            : cur.medical_cert_status,
         valid_from: patch.valid_from !== undefined ? patch.valid_from?.trim() || null : cur.valid_from,
         valid_until: patch.valid_until !== undefined ? patch.valid_until?.trim() || null : cur.valid_until,
         license_pdf_r2_key:
@@ -1111,14 +1128,19 @@ export function createD1Repository(db: D1Database) {
           patch.license_pdf_filename !== undefined ? patch.license_pdf_filename : cur.license_pdf_filename,
         license_qr_r2_key:
           patch.license_qr_r2_key !== undefined ? patch.license_qr_r2_key : cur.license_qr_r2_key,
+        ffessm_info_url:
+          patch.ffessm_info_url !== undefined ? patch.ffessm_info_url?.trim() || null : cur.ffessm_info_url,
+        last_synced_at:
+          patch.last_synced_at !== undefined ? patch.last_synced_at : cur.last_synced_at,
       };
       await db
         .prepare(
           `INSERT INTO diver_profile (
              id, full_name, birth_date, federation, license_number, club_name, club_number,
-             license_category, insurance, valid_from, valid_until,
-             license_pdf_r2_key, license_pdf_filename, license_qr_r2_key, updated_at
-           ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+             license_category, insurance, insurance_valid_until, medical_cert_status,
+             valid_from, valid_until, license_pdf_r2_key, license_pdf_filename,
+             license_qr_r2_key, ffessm_info_url, last_synced_at, updated_at
+           ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
            ON CONFLICT(id) DO UPDATE SET
              full_name = excluded.full_name,
              birth_date = excluded.birth_date,
@@ -1128,11 +1150,15 @@ export function createD1Repository(db: D1Database) {
              club_number = excluded.club_number,
              license_category = excluded.license_category,
              insurance = excluded.insurance,
+             insurance_valid_until = excluded.insurance_valid_until,
+             medical_cert_status = excluded.medical_cert_status,
              valid_from = excluded.valid_from,
              valid_until = excluded.valid_until,
              license_pdf_r2_key = excluded.license_pdf_r2_key,
              license_pdf_filename = excluded.license_pdf_filename,
              license_qr_r2_key = excluded.license_qr_r2_key,
+             ffessm_info_url = excluded.ffessm_info_url,
+             last_synced_at = excluded.last_synced_at,
              updated_at = datetime('now')`,
         )
         .bind(
@@ -1144,11 +1170,15 @@ export function createD1Repository(db: D1Database) {
           next.club_number,
           next.license_category,
           next.insurance,
+          next.insurance_valid_until,
+          next.medical_cert_status,
           next.valid_from,
           next.valid_until,
           next.license_pdf_r2_key,
           next.license_pdf_filename,
           next.license_qr_r2_key,
+          next.ffessm_info_url,
+          next.last_synced_at,
         )
         .run();
       return next;

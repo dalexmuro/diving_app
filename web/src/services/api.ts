@@ -461,6 +461,14 @@ export const apiClient = {
     return data.profile;
   },
 
+  async syncProfileFromFfessm(): Promise<{
+    profile: DiverProfile;
+    certifications: Certification[];
+    newCertificationsCount: number;
+  }> {
+    return apiJson('/api/profile/sync-ffessm', { method: 'POST', body: JSON.stringify({}) });
+  },
+
   getLicensePdfUrl(): string {
     return '/api/profile/license-pdf';
   },
