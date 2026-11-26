@@ -63,11 +63,16 @@ export function AppShell({
   ];
 
   const secondaryTabs: Array<{ id: AppView; label: string; icon: typeof Backpack }> = [
-    { id: 'profile', label: t('navProfile'), icon: User },
     { id: 'gear-certs', label: t('navGearCerts'), icon: Backpack },
     { id: 'calculators', label: t('navCalculators'), icon: Calculator },
+  ];
+
+  const accountTabs: Array<{ id: AppView; label: string; icon: typeof User }> = [
+    { id: 'profile', label: t('navProfile'), icon: User },
     { id: 'settings', label: t('navSettings'), icon: Settings },
   ];
+
+  const mobileUtilityTabs = [...secondaryTabs, ...accountTabs];
 
   const isPrimaryActive = (id: AppView) =>
     activeView === id ||
@@ -112,6 +117,30 @@ export function AppShell({
 
           <div className="pt-3 border-t border-slate-800/80 space-y-1">
             {secondaryTabs.map((item) => {
+              const Icon = item.icon;
+              const active = activeView === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-current={active ? 'page' : undefined}
+                  aria-label={item.label}
+                  title={item.label}
+                  onClick={() => onNavigate(item.id)}
+                  className={`w-full flex flex-col items-center justify-center gap-1 px-1 py-2 rounded-lg text-[10px] font-medium transition-colors cursor-pointer touch-target ${
+                    active
+                      ? 'bg-sky-600 text-white'
+                      : 'text-slate-300 hover:bg-slate-800/70 hover:text-white active:bg-slate-800'
+                  }`}
+                >
+                  <Icon className="w-5 h-5 shrink-0" />
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="pt-3 border-t border-slate-800/80 space-y-1">
+            {accountTabs.map((item) => {
               const Icon = item.icon;
               const active = activeView === item.id;
               return (
@@ -189,6 +218,29 @@ export function AppShell({
               );
             })}
           </div>
+
+          <div className="pt-4 border-t border-slate-800/80 space-y-1">
+            {accountTabs.map((item) => {
+              const Icon = item.icon;
+              const active = activeView === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-current={active ? 'page' : undefined}
+                  onClick={() => onNavigate(item.id)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+                    active
+                      ? 'bg-sky-600 text-white shadow-xs'
+                      : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'
+                  }`}
+                >
+                  <Icon className="w-5 h-5 shrink-0" />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </nav>
 
         {userEmail && (
@@ -223,7 +275,7 @@ export function AppShell({
 
             {/* Mobile secondary utility buttons (44px touch targets on coarse pointers) */}
             <div className="flex items-center gap-0.5 sm:hidden">
-              {secondaryTabs.map((item) => {
+              {mobileUtilityTabs.map((item) => {
                 const Icon = item.icon;
                 const active = activeView === item.id;
                 return (
