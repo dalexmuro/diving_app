@@ -28,12 +28,12 @@ import {
 import {
   type Buddy,
   type CurrentStrength,
-  type DayPeriod,
   type DecoStop,
   type DiveCenter,
   type DiveComputer,
   type DiveDetail,
   type DiveMode,
+  type DiveMood,
   type DiveSite,
   type DraftFitInit,
   type GasType,
@@ -178,14 +178,14 @@ export function DiveDetailPage({
   const [logNumber, setLogNumber] = useState('');
   const [diveMode, setDiveMode] = useState<DiveMode | ''>('');
   const [diveTypes, setDiveTypes] = useState<string[]>([]);
-  const [dayPeriod, setDayPeriod] = useState<DayPeriod | ''>('');
   const [seaState, setSeaState] = useState<SeaState | ''>('');
   const [weather, setWeather] = useState<WeatherCondition | ''>('');
   const [currentStrength, setCurrentStrength] = useState<CurrentStrength | ''>('');
   const [visibility, setVisibility] = useState<RatingScale | ''>('');
   const [buoyancy, setBuoyancy] = useState<RatingScale | ''>('');
   const [feeling, setFeeling] = useState<RatingScale | ''>('');
-  const [tags, setTags] = useState('');
+  const [comfort, setComfort] = useState<string[]>([]);
+  const [mood, setMood] = useState<DiveMood | ''>('');
   const [notes, setNotes] = useState('');
 
   const markDirty = () => setDirty(true);
@@ -250,19 +250,19 @@ export function DiveDetailPage({
     setBallast(data.ballast_kg != null ? String(data.ballast_kg) : '');
     setLogNumber(data.log_number != null ? String(data.log_number) : '');
     setDiveMode(data.dive_mode ?? '');
-    setDayPeriod(data.day_period ?? '');
     setSeaState(data.sea_state ?? '');
     setWeather(data.weather ?? '');
     setCurrentStrength(data.current_strength ?? '');
     setVisibility(data.visibility ?? '');
     setBuoyancy(data.buoyancy ?? '');
     setFeeling(data.feeling ?? '');
+    setMood(data.mood ?? '');
     setNotes(data.notes ?? '');
 
     try {
-      setTags((JSON.parse(data.tags_json || '[]') as string[]).join(', '));
+      setComfort(JSON.parse(data.comfort_json || '[]') as string[]);
     } catch {
-      setTags('');
+      setComfort([]);
     }
     try {
       setDiveTypes(JSON.parse(data.dive_types_json || '[]') as string[]);
@@ -372,17 +372,14 @@ export function DiveDetailPage({
         ballast_kg: ballast ? Number(ballast) : null,
         dive_mode: diveMode || null,
         dive_types: diveTypes,
-        day_period: dayPeriod || null,
         sea_state: seaState || null,
         weather: weather || null,
         current_strength: currentStrength || null,
         visibility: visibility || null,
         buoyancy: buoyancy || null,
         feeling: feeling || null,
-        tags: tags
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean),
+        comfort,
+        mood: mood || null,
         notes: notes.trim() || null,
       };
 
@@ -727,14 +724,39 @@ export function DiveDetailPage({
         ? `${t('gasTrimix')} ${o2Pct}/${hePct}`
         : `${t('gasAir')} ${o2Pct}%`;
 
-  const dayPeriodLabel =
-    dayPeriod === 'day'
-      ? t('periodDay')
-      : dayPeriod === 'twilight'
-        ? t('periodTwilight')
-        : dayPeriod === 'night'
-          ? t('periodNight')
-          : '—';
+  const comfortOptions: Array<{ id: string; label: string }> = [
+    { id: 'optimal', label: t('comfortOptimal') },
+    { id: 'good_equalization', label: t('comfortGoodEq') },
+    { id: 'bad_equalization', label: t('comfortBadEq') },
+    { id: 'cold', label: t('comfortCold') },
+    { id: 'warm', label: t('comfortWarm') },
+  ];
+
+  const comfortLabels = comfort.map(
+    (id) => comfortOptions.find((o) => o.id === id)?.label ?? id,
+  );
+
+  function handleComfortChange(nextLabels: string[]) {
+    const mapped = nextLabels.map((lbl) => {
+      const match = comfortOptions.find(
+        (o) => o.label.toLowerCase() === lbl.trim().toLowerCase(),
+      );
+      return match ? match.id : lbl.trim();
+    });
+    setComfort(mapped);
+    markDirty();
+  }
+
+  const moodLabel =
+    mood === 'relaxed'
+      ? t('moodRelaxed')
+      : mood === 'focused'
+        ? t('moodFocused')
+        : mood === 'tired'
+          ? t('moodTired')
+          : mood === 'stressed'
+            ? t('moodStressed')
+            : '—';
 
   const seaStateLabel =
     seaState === 'calm'
@@ -1142,10 +1164,6 @@ export function DiveDetailPage({
               </h3>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div className="space-y-0.5">
-                  <p className="text-xs text-slate-500">{t('dayPeriod')}</p>
-                  <p className="text-sm font-semibold text-slate-900">{dayPeriodLabel}</p>
-                </div>
-                <div className="space-y-0.5">
                   <p className="text-xs text-slate-500">{t('seaState')}</p>
                   <p className="text-sm font-semibold text-slate-900">{seaStateLabel}</p>
                 </div>
@@ -1170,8 +1188,25 @@ export function DiveDetailPage({
                   <p className="text-sm font-semibold text-slate-900">{ratingLabel(feeling)}</p>
                 </div>
                 <div className="space-y-0.5">
-                  <p className="text-xs text-slate-500">{t('tags')}</p>
-                  <p className="text-sm font-semibold text-slate-900">{tags || '—'}</p>
+                  <p className="text-xs text-slate-500">{t('mood')}</p>
+                  <p className="text-sm font-semibold text-slate-900">{moodLabel}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-slate-500">{t('comfort')}</p>
+                  {comfortLabels.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {comfortLabels.map((lbl) => (
+                        <span
+                          key={lbl}
+                          className="inline-flex items-center rounded-full bg-white border border-sky-200 px-2.5 py-0.5 text-xs font-medium text-sky-900"
+                        >
+                          {lbl}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm font-semibold text-slate-900">—</p>
+                  )}
                 </div>
               </div>
 
@@ -1845,22 +1880,6 @@ export function DiveDetailPage({
             </h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <label className="space-y-1 text-xs font-medium text-slate-700">
-                <span>{t('dayPeriod')}</span>
-                <select
-                  value={dayPeriod}
-                  onChange={(e) => {
-                    setDayPeriod(e.target.value as DayPeriod | '');
-                    markDirty();
-                  }}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
-                >
-                  <option value="">—</option>
-                  <option value="day">{t('periodDay')}</option>
-                  <option value="twilight">{t('periodTwilight')}</option>
-                  <option value="night">{t('periodNight')}</option>
-                </select>
-              </label>
-              <label className="space-y-1 text-xs font-medium text-slate-700">
                 <span>{t('seaState')}</span>
                 <select
                   value={seaState}
@@ -1913,71 +1932,88 @@ export function DiveDetailPage({
               </label>
               <label className="space-y-1 text-xs font-medium text-slate-700">
                 <span>{t('visibility')}</span>
-              <select
-                value={visibility}
-                onChange={(e) => {
-                  setVisibility(e.target.value as RatingScale | '');
-                  markDirty();
-                }}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
-              >
-                <option value="">—</option>
-                {ratingOptions.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-1 text-xs font-medium text-slate-700">
-              <span>{t('buoyancy')}</span>
-              <select
-                value={buoyancy}
-                onChange={(e) => {
-                  setBuoyancy(e.target.value as RatingScale | '');
-                  markDirty();
-                }}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
-              >
-                <option value="">—</option>
-                {ratingOptions.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-1 text-xs font-medium text-slate-700">
-              <span>{t('feeling')}</span>
-              <select
-                value={feeling}
-                onChange={(e) => {
-                  setFeeling(e.target.value as RatingScale | '');
-                  markDirty();
-                }}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
-              >
-                <option value="">—</option>
-                {ratingOptions.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-1 text-xs font-medium text-slate-700">
-              <span>{t('tags')}</span>
-              <input
-                type="text"
-                value={tags}
-                onChange={(e) => {
-                  setTags(e.target.value);
-                  markDirty();
-                }}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm text-slate-900"
-              />
-            </label>
-          </div>
+                <select
+                  value={visibility}
+                  onChange={(e) => {
+                    setVisibility(e.target.value as RatingScale | '');
+                    markDirty();
+                  }}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+                >
+                  <option value="">—</option>
+                  {ratingOptions.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-start">
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('buoyancy')}</span>
+                <select
+                  value={buoyancy}
+                  onChange={(e) => {
+                    setBuoyancy(e.target.value as RatingScale | '');
+                    markDirty();
+                  }}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+                >
+                  <option value="">—</option>
+                  {ratingOptions.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('feeling')}</span>
+                <select
+                  value={feeling}
+                  onChange={(e) => {
+                    setFeeling(e.target.value as RatingScale | '');
+                    markDirty();
+                  }}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+                >
+                  <option value="">—</option>
+                  {ratingOptions.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>{t('mood')}</span>
+                <select
+                  value={mood}
+                  onChange={(e) => {
+                    setMood(e.target.value as DiveMood | '');
+                    markDirty();
+                  }}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-slate-900"
+                >
+                  <option value="">—</option>
+                  <option value="relaxed">{t('moodRelaxed')}</option>
+                  <option value="focused">{t('moodFocused')}</option>
+                  <option value="tired">{t('moodTired')}</option>
+                  <option value="stressed">{t('moodStressed')}</option>
+                </select>
+              </label>
+            </div>
+
+            <SmartMultiSelect
+              label={t('comfort')}
+              values={comfortLabels}
+              options={comfortOptions.map((o) => o.label)}
+              placeholder={t('selectOrType')}
+              addLabel={t('addOption')}
+              onChange={handleComfortChange}
+            />
 
           <label className="block space-y-1 text-xs font-medium text-slate-700">
             <span>{t('notes')}</span>

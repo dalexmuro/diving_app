@@ -11,6 +11,7 @@ export type DayPeriod = 'day' | 'twilight' | 'night';
 export type SeaState = 'calm' | 'slight' | 'moderate' | 'rough';
 export type WeatherCondition = 'sunny' | 'cloudy' | 'rainy' | 'windy';
 export type CurrentStrength = 'none' | 'weak' | 'moderate' | 'strong';
+export type DiveMood = 'relaxed' | 'focused' | 'tired' | 'stressed';
 
 export interface DecoStop {
   depth_m: number;
@@ -71,6 +72,8 @@ export interface DiveRecord {
   visibility: RatingScale | null;
   buoyancy: RatingScale | null;
   feeling: RatingScale | null;
+  comfort_json?: string;
+  mood?: DiveMood | null;
   notes: string | null;
   user_edited_fields_json: string;
   created_at: string;
@@ -213,6 +216,8 @@ const EDITABLE_DIVE_COLUMNS = [
   'visibility',
   'buoyancy',
   'feeling',
+  'comfort_json',
+  'mood',
   'notes',
 ] as const;
 
@@ -220,6 +225,7 @@ export type EditableDiveField = (typeof EDITABLE_DIVE_COLUMNS)[number];
 export type DivePatch = Partial<Record<EditableDiveField, unknown>> & {
   tags?: string[];
   dive_types?: string[];
+  comfort?: string[];
   buddies?: string[];
   gear_used?: string[];
   deco_stops?: DecoStop[];
@@ -659,6 +665,11 @@ export function createD1Repository(db: D1Database) {
       if (Array.isArray(patch.dive_types)) {
         normalized.dive_types_json = JSON.stringify(
           patch.dive_types.map((v) => v.trim()).filter(Boolean),
+        );
+      }
+      if (Array.isArray(patch.comfort)) {
+        normalized.comfort_json = JSON.stringify(
+          patch.comfort.map((v) => v.trim()).filter(Boolean),
         );
       }
       if (Array.isArray(patch.buddies)) {

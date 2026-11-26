@@ -6,10 +6,10 @@ export type TankMaterial = 'steel' | 'aluminum' | 'composite';
 export type GasType = 'air' | 'nitrox' | 'trimix';
 export type DiveMode = 'autonomous' | 'guided' | 'training';
 export type TankConfig = 'single' | 'double' | 'sidemount';
-export type DayPeriod = 'day' | 'twilight' | 'night';
 export type SeaState = 'calm' | 'slight' | 'moderate' | 'rough';
 export type WeatherCondition = 'sunny' | 'cloudy' | 'rainy' | 'windy';
 export type CurrentStrength = 'none' | 'weak' | 'moderate' | 'strong';
+export type DiveMood = 'relaxed' | 'focused' | 'tired' | 'stressed';
 
 export type AppView =
   | 'dashboard'
@@ -94,7 +94,6 @@ export interface DiveSummary {
   tank_material: TankMaterial | null;
   tank_config?: TankConfig | null;
   ballast_kg: number | null;
-  day_period?: DayPeriod | null;
   sea_state?: SeaState | null;
   weather?: WeatherCondition | null;
   current_strength?: CurrentStrength | null;
@@ -110,10 +109,12 @@ export interface DiveSummary {
   dive_center_location?: string | null;
   dive_center_lat?: number | null;
   dive_center_lng?: number | null;
-  tags_json: string;
+  tags_json?: string;
   visibility: RatingScale | null;
   buoyancy: RatingScale | null;
   feeling: RatingScale | null;
+  comfort_json?: string;
+  mood?: DiveMood | null;
   notes: string | null;
 }
 
