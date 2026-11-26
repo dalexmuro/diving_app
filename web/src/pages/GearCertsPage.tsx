@@ -1,4 +1,4 @@
-import { Pencil, Plus, Trash2, X } from 'lucide-react';
+import { Award, Backpack, Building2, Cpu, MapPin, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { LocationPicker } from '../components/LocationPicker';
 import { usePreferences } from '../i18n/I18nContext';
@@ -372,27 +372,37 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
               </button>
             </form>
           )}
-          <ul className="divide-y divide-slate-200">
-            {gear.map((item) => (
-              <li key={item.id} className="py-3 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-900 truncate">{item.name}</p>
-                  <p className="text-xs text-slate-500">
-                    {[item.brand, item.model].filter(Boolean).join(' · ') ||
-                      item.brand_model ||
-                      '—'}
-                    {item.notes ? ` — ${item.notes}` : ''}
-                  </p>
-                </div>
-                {renderRowActions('gear', item.id, () => {
-                  setGearId(item.id);
-                  setGearName(item.name);
-                  setGearBrand(item.brand ?? '');
-                  setGearModel(item.model ?? '');
-                  setGearNotes(item.notes ?? '');
-                })}
-              </li>
-            ))}
+          <ul className="space-y-2.5">
+            {gear.map((item) => {
+              const subtitle = [item.brand, item.model].filter(Boolean).join(' · ') || item.brand_model || '';
+              return (
+                <li
+                  key={item.id}
+                  className="rounded-xl border border-sky-200/75 bg-sky-50/35 hover:bg-sky-50/75 transition-colors px-4 py-3 flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="w-9 h-9 rounded-lg bg-sky-100/90 text-sky-700 inline-flex items-center justify-center shrink-0">
+                      <Backpack className="w-4 h-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 truncate">{item.name}</p>
+                      {(subtitle || item.notes) && (
+                        <p className="text-xs text-slate-500 truncate mt-0.5">
+                          {[subtitle, item.notes].filter(Boolean).join(' · ')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {renderRowActions('gear', item.id, () => {
+                    setGearId(item.id);
+                    setGearName(item.name);
+                    setGearBrand(item.brand ?? '');
+                    setGearModel(item.model ?? '');
+                    setGearNotes(item.notes ?? '');
+                  })}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -458,28 +468,46 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
               </button>
             </form>
           )}
-          <ul className="divide-y divide-slate-200">
-            {centers.map((c) => (
-              <li key={c.id} className="py-3 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-900 truncate">{c.name}</p>
-                  <p className="text-xs text-slate-500 tabular-telemetry">
-                    {c.location_text || '—'}
-                    {c.latitude != null && c.longitude != null
-                      ? ` (${c.latitude.toFixed(4)}, ${c.longitude.toFixed(4)})`
-                      : ''}
-                  </p>
-                </div>
-                {renderRowActions('centers', c.id, () => {
-                  setCenterId(c.id);
-                  setCenterName(c.name);
-                  setCenterLoc(c.location_text ?? '');
-                  setCenterLat(c.latitude != null ? String(c.latitude) : '');
-                  setCenterLng(c.longitude != null ? String(c.longitude) : '');
-                  setCenterNotes(c.notes ?? '');
-                })}
-              </li>
-            ))}
+          <ul className="space-y-2.5">
+            {centers.map((c) => {
+              const coords =
+                c.latitude != null && c.longitude != null
+                  ? `${c.latitude.toFixed(4)}, ${c.longitude.toFixed(4)}`
+                  : '';
+              const locLine = [c.location_text, coords].filter(Boolean).join(' · ');
+              return (
+                <li
+                  key={c.id}
+                  className="rounded-xl border border-sky-200/75 bg-sky-50/35 hover:bg-sky-50/75 transition-colors px-4 py-3 flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="w-9 h-9 rounded-lg bg-sky-100/90 text-sky-700 inline-flex items-center justify-center shrink-0">
+                      <Building2 className="w-4 h-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 truncate">{c.name}</p>
+                      {locLine && (
+                        <p className="text-xs text-slate-500 tabular-telemetry inline-flex items-center gap-1 mt-0.5 truncate max-w-full">
+                          <MapPin className="w-3 h-3 text-sky-600 shrink-0" />
+                          <span className="truncate">{locLine}</span>
+                        </p>
+                      )}
+                      {c.notes && (
+                        <p className="text-xs text-slate-500 truncate mt-0.5">{c.notes}</p>
+                      )}
+                    </div>
+                  </div>
+                  {renderRowActions('centers', c.id, () => {
+                    setCenterId(c.id);
+                    setCenterName(c.name);
+                    setCenterLoc(c.location_text ?? '');
+                    setCenterLat(c.latitude != null ? String(c.latitude) : '');
+                    setCenterLng(c.longitude != null ? String(c.longitude) : '');
+                    setCenterNotes(c.notes ?? '');
+                  })}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -533,12 +561,22 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
               </button>
             </form>
           )}
-          <ul className="divide-y divide-slate-200">
+          <ul className="space-y-2.5">
             {buddies.map((b) => (
-              <li key={b.id} className="py-3 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-900 truncate">{b.name}</p>
-                  {b.notes && <p className="text-xs text-slate-500">{b.notes}</p>}
+              <li
+                key={b.id}
+                className="rounded-xl border border-sky-200/75 bg-sky-50/35 hover:bg-sky-50/75 transition-colors px-4 py-3 flex items-center justify-between gap-3"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="w-9 h-9 rounded-lg bg-sky-100/90 text-sky-700 inline-flex items-center justify-center shrink-0">
+                    <Users className="w-4 h-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-900 truncate">{b.name}</p>
+                    {b.notes && (
+                      <p className="text-xs text-slate-500 truncate mt-0.5">{b.notes}</p>
+                    )}
+                  </div>
                 </div>
                 {renderRowActions('buddies', b.id, () => {
                   setBuddyId(b.id);
@@ -618,25 +656,37 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
               </button>
             </form>
           )}
-          <ul className="divide-y divide-slate-200">
-            {computers.map((c) => (
-              <li key={c.id} className="py-3 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-900 truncate">{c.name}</p>
-                  <p className="text-xs text-slate-500">
-                    {[c.brand, c.model].filter(Boolean).join(' · ') || '—'}
-                    {c.notes ? ` — ${c.notes}` : ''}
-                  </p>
-                </div>
-                {renderRowActions('computers', c.id, () => {
-                  setCompId(c.id);
-                  setCompName(c.name);
-                  setCompBrand(c.brand ?? '');
-                  setCompModel(c.model ?? '');
-                  setCompNotes(c.notes ?? '');
-                })}
-              </li>
-            ))}
+          <ul className="space-y-2.5">
+            {computers.map((c) => {
+              const subtitle = [c.brand, c.model].filter(Boolean).join(' · ');
+              return (
+                <li
+                  key={c.id}
+                  className="rounded-xl border border-sky-200/75 bg-sky-50/35 hover:bg-sky-50/75 transition-colors px-4 py-3 flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="w-9 h-9 rounded-lg bg-sky-100/90 text-sky-700 inline-flex items-center justify-center shrink-0">
+                      <Cpu className="w-4 h-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 truncate">{c.name}</p>
+                      {(subtitle || c.notes) && (
+                        <p className="text-xs text-slate-500 truncate mt-0.5">
+                          {[subtitle, c.notes].filter(Boolean).join(' · ')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {renderRowActions('computers', c.id, () => {
+                    setCompId(c.id);
+                    setCompName(c.name);
+                    setCompBrand(c.brand ?? '');
+                    setCompModel(c.model ?? '');
+                    setCompNotes(c.notes ?? '');
+                  })}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -709,27 +759,39 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
               </button>
             </form>
           )}
-          <ul className="divide-y divide-slate-200">
-            {certs.map((c) => (
-              <li key={c.id} className="py-3 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-900 truncate">
-                    {c.agency} — {c.level}
-                  </p>
-                  <p className="text-xs text-slate-500 tabular-telemetry">
-                    {c.cert_number || '—'}
-                    {c.issued_date ? ` · ${c.issued_date}` : ''}
-                  </p>
-                </div>
-                {renderRowActions('certs', c.id, () => {
-                  setCertId(c.id);
-                  setAgency(c.agency);
-                  setLevel(c.level);
-                  setCertNumber(c.cert_number ?? '');
-                  setIssuedDate(c.issued_date ?? '');
-                })}
-              </li>
-            ))}
+          <ul className="space-y-2.5">
+            {certs.map((c) => {
+              const meta = [c.cert_number, c.issued_date].filter(Boolean).join(' · ');
+              return (
+                <li
+                  key={c.id}
+                  className="rounded-xl border border-sky-200/75 bg-sky-50/35 hover:bg-sky-50/75 transition-colors px-4 py-3 flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="w-9 h-9 rounded-lg bg-sky-100/90 text-sky-700 inline-flex items-center justify-center shrink-0">
+                      <Award className="w-4 h-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 truncate">
+                        {c.agency} · {c.level}
+                      </p>
+                      {meta && (
+                        <p className="text-xs text-slate-500 tabular-telemetry truncate mt-0.5">
+                          {meta}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {renderRowActions('certs', c.id, () => {
+                    setCertId(c.id);
+                    setAgency(c.agency);
+                    setLevel(c.level);
+                    setCertNumber(c.cert_number ?? '');
+                    setIssuedDate(c.issued_date ?? '');
+                  })}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
