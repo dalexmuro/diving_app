@@ -1263,8 +1263,8 @@ export function createD1Repository(db: D1Database) {
           byMonth: [],
           depthBuckets: [
             { bucket: '0-12m', count: 0 },
-            { bucket: '12-18m', count: 0 },
-            { bucket: '18-30m', count: 0 },
+            { bucket: '12-20m', count: 0 },
+            { bucket: '20-30m', count: 0 },
             { bucket: '30-40m', count: 0 },
             { bucket: '40m+', count: 0 },
           ],
@@ -1295,7 +1295,7 @@ export function createD1Repository(db: D1Database) {
       );
 
       const monthMap = new Map<string, { count: number; durationS: number }>();
-      const bucketCounts = { '0-12m': 0, '12-18m': 0, '18-30m': 0, '30-40m': 0, '40m+': 0 };
+      const bucketCounts = { '0-12m': 0, '12-20m': 0, '20-30m': 0, '30-40m': 0, '40m+': 0 };
       const gasMap = new Map<GasType, number>();
       const seasonTemps = new Map<string, number[]>();
 
@@ -1307,8 +1307,8 @@ export function createD1Repository(db: D1Database) {
         monthMap.set(ym, curM);
 
         if (d.max_depth_m <= 12) bucketCounts['0-12m'] += 1;
-        else if (d.max_depth_m <= 18) bucketCounts['12-18m'] += 1;
-        else if (d.max_depth_m <= 30) bucketCounts['18-30m'] += 1;
+        else if (d.max_depth_m <= 20) bucketCounts['12-20m'] += 1;
+        else if (d.max_depth_m <= 30) bucketCounts['20-30m'] += 1;
         else if (d.max_depth_m <= 40) bucketCounts['30-40m'] += 1;
         else bucketCounts['40m+'] += 1;
 
