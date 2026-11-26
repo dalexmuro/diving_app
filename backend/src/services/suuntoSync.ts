@@ -9,8 +9,19 @@ export interface SuuntoEnv {
   SUUNTO_WEBHOOK_SECRET?: string;
 }
 
+export interface R2ObjectLike {
+  body: ReadableStream | null;
+  arrayBuffer(): Promise<ArrayBuffer>;
+}
+
 export interface R2Archiver {
-  put(key: string, value: Uint8Array | ArrayBuffer): Promise<unknown>;
+  put(
+    key: string,
+    value: Uint8Array | ArrayBuffer,
+    options?: { httpMetadata?: { contentType?: string } },
+  ): Promise<unknown>;
+  get?(key: string): Promise<R2ObjectLike | null>;
+  delete?(key: string): Promise<void>;
 }
 
 interface SuuntoOAuthTokenResponse {

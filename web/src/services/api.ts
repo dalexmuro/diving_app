@@ -389,6 +389,7 @@ export const apiClient = {
     id?: string;
     agency: string;
     level: string;
+    location?: string | null;
     cert_number?: string | null;
     issued_date?: string | null;
   }): Promise<Certification> {
@@ -401,6 +402,25 @@ export const apiClient = {
       body: JSON.stringify(cert),
     });
     return certification;
+  },
+
+  async uploadCertificationPdf(id: string, file: File): Promise<Certification> {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`/api/certifications/${encodeURIComponent(id)}/pdf`, {
+      method: 'POST',
+      credentials: 'include',
+      body: form,
+    });
+    if (!res.ok) {
+      throw new Error(`PDF upload failed (${res.status})`);
+    }
+    const data = (await res.json()) as { certification: Certification };
+    return data.certification;
+  },
+
+  getCertificationPdfUrl(id: string): string {
+    return `/api/certifications/${encodeURIComponent(id)}/pdf`;
   },
 
   async deleteCertification(id: string): Promise<void> {

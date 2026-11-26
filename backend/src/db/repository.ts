@@ -138,8 +138,11 @@ export interface CertificationRecord {
   id: string;
   agency: string;
   level: string;
+  location: string | null;
   cert_number: string | null;
   issued_date: string | null;
+  pdf_r2_key: string | null;
+  pdf_filename: string | null;
   created_at: string;
 }
 
@@ -968,30 +971,71 @@ export function createD1Repository(db: D1Database) {
       return results ?? [];
     },
 
+    async getCertificationById(id: string): Promise<CertificationRecord | null> {
+      return (
+        (await db
+          .prepare('SELECT * FROM certifications WHERE id = ?')
+          .bind(id)
+          .first<CertificationRecord>()) ?? null
+      );
+    },
+
     async upsertCertification(input: {
       id?: string;
       agency: string;
       level: string;
+      location?: string | null;
       cert_number?: string | null;
       issued_date?: string | null;
+      pdf_r2_key?: string | null;
+      pdf_filename?: string | null;
     }): Promise<CertificationRecord> {
       const id = input.id ?? crypto.randomUUID();
       await db
         .prepare(
-          `INSERT INTO certifications (id, agency, level, cert_number, issued_date)
-           VALUES (?, ?, ?, ?, ?)
+          `INSERT INTO certifications (id, agency, level, location, cert_number, issued_date, pdf_r2_key, pdf_filename)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
              agency = excluded.agency,
              level = excluded.level,
+             location = excluded.location,
              cert_number = excluded.cert_number,
-             issued_date = excluded.issued_date`,
+             issued_date = excluded.issued_date,
+             pdf_r2_key = COALESCE(excluded.pdf_r2_key, certifications.pdf_r2_key),
+             pdf_filename = COALESCE(excluded.pdf_filename, certifications.pdf_filename)`,
         )
-        .bind(id, input.agency.trim(), input.level.trim(), input.cert_number ?? null, input.issued_date ?? null)
+        .bind(
+          id,
+          input.agency.trim(),
+          input.level.trim(),
+          input.location?.trim() || null,
+          input.cert_number ?? null,
+          input.issued_date ?? null,
+          input.pdf_r2_key ?? null,
+          input.pdf_filename ?? null,
+        )
         .run();
       return (await db
         .prepare('SELECT * FROM certifications WHERE id = ?')
         .bind(id)
         .first<CertificationRecord>())!;
+    },
+
+    async setCertificationPdf(
+      id: string,
+      pdfR2Key: string | null,
+      pdfFilename: string | null,
+    ): Promise<CertificationRecord | null> {
+      await db
+        .prepare('UPDATE certifications SET pdf_r2_key = ?, pdf_filename = ? WHERE id = ?')
+        .bind(pdfR2Key, pdfFilename, id)
+        .run();
+      return (
+        (await db
+          .prepare('SELECT * FROM certifications WHERE id = ?')
+          .bind(id)
+          .first<CertificationRecord>()) ?? null
+      );
     },
 
     async deleteCertification(id: string): Promise<boolean> {

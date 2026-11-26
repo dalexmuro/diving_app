@@ -176,8 +176,11 @@ export interface Certification {
   id: string;
   agency: string;
   level: string;
+  location: string | null;
   cert_number: string | null;
   issued_date: string | null;
+  pdf_r2_key?: string | null;
+  pdf_filename?: string | null;
   created_at: string;
 }
 

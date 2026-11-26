@@ -441,6 +441,7 @@ export async function handleApiRoutes(params: {
       id?: string;
       agency?: string;
       level?: string;
+      location?: string | null;
       cert_number?: string | null;
       issued_date?: string | null;
     } | null;
@@ -451,10 +452,63 @@ export async function handleApiRoutes(params: {
       id: body.id,
       agency: body.agency,
       level: body.level,
+      location: body.location,
       cert_number: body.cert_number,
       issued_date: body.issued_date,
     });
     return Response.json({ certification }, { status: 201 });
+  }
+  const certPdfMatch = path.match(/^\/api\/certifications\/([^/]+)\/pdf$/);
+  if (certPdfMatch) {
+    const id = decodeURIComponent(certPdfMatch[1]);
+    const existing = await repo.getCertificationById(id);
+    if (!existing) {
+      return Response.json({ error: 'Certification not found' }, { status: 404 });
+    }
+    if (method === 'GET') {
+      if (!existing.pdf_r2_key || !bucket.get) {
+        return Response.json({ error: 'PDF not available' }, { status: 404 });
+      }
+      const obj = await bucket.get(existing.pdf_r2_key);
+      if (!obj || !obj.body) {
+        return Response.json({ error: 'PDF file not found in storage' }, { status: 404 });
+      }
+      const safeName = (existing.pdf_filename || `${existing.level}.pdf`).replace(/["\r\n]/g, '');
+      return new Response(obj.body, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="${safeName}"`,
+        },
+      });
+    }
+    if (method === 'POST') {
+      let pdfBytes: Uint8Array | null = null;
+      let fileName = `${existing.level}.pdf`;
+      const contentType = request.headers.get('Content-Type') || '';
+      if (contentType.includes('multipart/form-data')) {
+        const form = await request.formData();
+        const file = form.get('file');
+        if (!(file instanceof File)) {
+          return Response.json({ error: 'Missing PDF file' }, { status: 400 });
+        }
+        fileName = file.name || fileName;
+        pdfBytes = new Uint8Array(await file.arrayBuffer());
+      } else {
+        const buf = await request.arrayBuffer();
+        pdfBytes = buf.byteLength > 0 ? new Uint8Array(buf) : null;
+      }
+      if (!pdfBytes || pdfBytes.byteLength === 0) {
+        return Response.json({ error: 'Empty PDF payload' }, { status: 400 });
+      }
+      if (pdfBytes.byteLength > 10 * 1024 * 1024) {
+        return Response.json({ error: 'PDF exceeds 10 MB limit' }, { status: 400 });
+      }
+      const key = `certs/${id}.pdf`;
+      await bucket.put(key, pdfBytes, { httpMetadata: { contentType: 'application/pdf' } });
+      const certification = await repo.setCertificationPdf(id, key, fileName);
+      return Response.json({ certification });
+    }
   }
   const certIdMatch = path.match(/^\/api\/certifications\/([^/]+)$/);
   if (certIdMatch) {
@@ -463,6 +517,7 @@ export async function handleApiRoutes(params: {
       const body = (await request.json().catch(() => null)) as {
         agency?: string;
         level?: string;
+        location?: string | null;
         cert_number?: string | null;
         issued_date?: string | null;
       } | null;
@@ -478,7 +533,11 @@ export async function handleApiRoutes(params: {
       return Response.json({ certification });
     }
     if (method === 'DELETE') {
+      const existing = await repo.getCertificationById(id);
       const deleted = await repo.deleteCertification(id);
+      if (deleted && existing?.pdf_r2_key && bucket.delete) {
+        await bucket.delete(existing.pdf_r2_key).catch(() => undefined);
+      }
       return deleted
         ? Response.json({ ok: true })
         : Response.json({ error: 'Certification not found' }, { status: 404 });
