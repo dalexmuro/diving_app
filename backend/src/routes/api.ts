@@ -1,4 +1,9 @@
-import { type AppRepository, type DivePatch, type UserSettingsRecord } from '../db/repository';
+import {
+  type AppRepository,
+  type DivePatch,
+  type DiverProfileRecord,
+  type UserSettingsRecord,
+} from '../db/repository';
 import { parseSuuntoFit } from '../fit/parser';
 import {
   type AuthEnv,
@@ -542,6 +547,84 @@ export async function handleApiRoutes(params: {
         ? Response.json({ ok: true })
         : Response.json({ error: 'Certification not found' }, { status: 404 });
     }
+  }
+
+  // --- Diver Profile & License ---
+  if (method === 'GET' && path === '/api/profile') {
+    return Response.json({ profile: await repo.getProfile() });
+  }
+  if (method === 'PATCH' && path === '/api/profile') {
+    const body = (await request.json().catch(() => null)) as Partial<DiverProfileRecord> | null;
+    if (!body) return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
+    const profile = await repo.updateProfile(body);
+    return Response.json({ profile });
+  }
+  if (path === '/api/profile/license-pdf') {
+    if (method === 'GET') {
+      const profile = await repo.getProfile();
+      if (!profile.license_pdf_r2_key || !bucket.get) {
+        return Response.json({ error: 'License PDF not available' }, { status: 404 });
+      }
+      const obj = await bucket.get(profile.license_pdf_r2_key);
+      if (!obj || !obj.body) {
+        return Response.json({ error: 'License PDF not found in storage' }, { status: 404 });
+      }
+      const safeName = (profile.license_pdf_filename || 'Attestation Licence.pdf').replace(/["\r\n]/g, '');
+      return new Response(obj.body, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="${safeName}"`,
+        },
+      });
+    }
+    if (method === 'POST') {
+      let pdfBytes: Uint8Array | null = null;
+      let fileName = 'Attestation Licence.pdf';
+      const contentType = request.headers.get('Content-Type') || '';
+      if (contentType.includes('multipart/form-data')) {
+        const form = await request.formData();
+        const file = form.get('file');
+        if (!(file instanceof File)) {
+          return Response.json({ error: 'Missing PDF file' }, { status: 400 });
+        }
+        fileName = file.name || fileName;
+        pdfBytes = new Uint8Array(await file.arrayBuffer());
+      } else {
+        const buf = await request.arrayBuffer();
+        pdfBytes = buf.byteLength > 0 ? new Uint8Array(buf) : null;
+      }
+      if (!pdfBytes || pdfBytes.byteLength === 0) {
+        return Response.json({ error: 'Empty PDF payload' }, { status: 400 });
+      }
+      if (pdfBytes.byteLength > 10 * 1024 * 1024) {
+        return Response.json({ error: 'PDF exceeds 10 MB limit' }, { status: 400 });
+      }
+      const key = 'profile/license.pdf';
+      await bucket.put(key, pdfBytes, { httpMetadata: { contentType: 'application/pdf' } });
+      const profile = await repo.updateProfile({
+        license_pdf_r2_key: key,
+        license_pdf_filename: fileName,
+      });
+      return Response.json({ profile });
+    }
+  }
+  if (method === 'GET' && path === '/api/profile/license-qr') {
+    const profile = await repo.getProfile();
+    if (!profile.license_qr_r2_key || !bucket.get) {
+      return Response.json({ error: 'License QR not available' }, { status: 404 });
+    }
+    const obj = await bucket.get(profile.license_qr_r2_key);
+    if (!obj || !obj.body) {
+      return Response.json({ error: 'License QR not found in storage' }, { status: 404 });
+    }
+    const isSvg = profile.license_qr_r2_key.endsWith('.svg');
+    return new Response(obj.body, {
+      status: 200,
+      headers: {
+        'Content-Type': isSvg ? 'image/svg+xml' : 'image/png',
+      },
+    });
   }
 
   // --- User Settings ---

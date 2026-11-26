@@ -5,6 +5,7 @@ import {
   Compass,
   LayoutDashboard,
   Settings,
+  User,
   Wifi,
   WifiOff,
 } from 'lucide-react';
@@ -62,6 +63,7 @@ export function AppShell({
   ];
 
   const secondaryTabs: Array<{ id: AppView; label: string; icon: typeof Backpack }> = [
+    { id: 'profile', label: t('navProfile'), icon: User },
     { id: 'gear-certs', label: t('navGearCerts'), icon: Backpack },
     { id: 'calculators', label: t('navCalculators'), icon: Calculator },
     { id: 'settings', label: t('navSettings'), icon: Settings },

@@ -17,6 +17,7 @@ export type AppView =
   | 'new-dive-choice'
   | 'dive-detail'
   | 'sites'
+  | 'profile'
   | 'gear-certs'
   | 'calculators'
   | 'settings';
@@ -188,6 +189,22 @@ export interface UserSettings {
   language: Language;
   unit_system: UnitSystem;
   ascent_rate_limit_m_min: number;
+}
+
+export interface DiverProfile {
+  full_name: string | null;
+  birth_date: string | null;
+  federation: string | null;
+  license_number: string | null;
+  club_name: string | null;
+  club_number: string | null;
+  license_category: string | null;
+  insurance: string | null;
+  valid_from: string | null;
+  valid_until: string | null;
+  license_pdf_r2_key: string | null;
+  license_pdf_filename: string | null;
+  license_qr_r2_key: string | null;
 }
 
 export interface GlobalStats {

@@ -152,6 +152,22 @@ export interface UserSettingsRecord {
   ascent_rate_limit_m_min: number;
 }
 
+export interface DiverProfileRecord {
+  full_name: string | null;
+  birth_date: string | null;
+  federation: string | null;
+  license_number: string | null;
+  club_name: string | null;
+  club_number: string | null;
+  license_category: string | null;
+  insurance: string | null;
+  valid_from: string | null;
+  valid_until: string | null;
+  license_pdf_r2_key: string | null;
+  license_pdf_filename: string | null;
+  license_qr_r2_key: string | null;
+}
+
 export interface SuuntoTokenRecord {
   access_token: string;
   refresh_token: string;
@@ -1041,6 +1057,101 @@ export function createD1Repository(db: D1Database) {
     async deleteCertification(id: string): Promise<boolean> {
       const res = await db.prepare('DELETE FROM certifications WHERE id = ?').bind(id).run();
       return (res.meta?.changes ?? 0) > 0;
+    },
+
+    // --- Diver Profile & License ---
+    async getProfile(): Promise<DiverProfileRecord> {
+      const row = await db
+        .prepare(
+          `SELECT full_name, birth_date, federation, license_number, club_name, club_number,
+                  license_category, insurance, valid_from, valid_until,
+                  license_pdf_r2_key, license_pdf_filename, license_qr_r2_key
+           FROM diver_profile WHERE id = 1`,
+        )
+        .first<DiverProfileRecord>();
+      return (
+        row ?? {
+          full_name: null,
+          birth_date: null,
+          federation: null,
+          license_number: null,
+          club_name: null,
+          club_number: null,
+          license_category: null,
+          insurance: null,
+          valid_from: null,
+          valid_until: null,
+          license_pdf_r2_key: null,
+          license_pdf_filename: null,
+          license_qr_r2_key: null,
+        }
+      );
+    },
+
+    async updateProfile(patch: Partial<DiverProfileRecord>): Promise<DiverProfileRecord> {
+      const cur = await this.getProfile();
+      const next: DiverProfileRecord = {
+        full_name: patch.full_name !== undefined ? patch.full_name?.trim() || null : cur.full_name,
+        birth_date: patch.birth_date !== undefined ? patch.birth_date?.trim() || null : cur.birth_date,
+        federation: patch.federation !== undefined ? patch.federation?.trim() || null : cur.federation,
+        license_number:
+          patch.license_number !== undefined ? patch.license_number?.trim() || null : cur.license_number,
+        club_name: patch.club_name !== undefined ? patch.club_name?.trim() || null : cur.club_name,
+        club_number: patch.club_number !== undefined ? patch.club_number?.trim() || null : cur.club_number,
+        license_category:
+          patch.license_category !== undefined
+            ? patch.license_category?.trim() || null
+            : cur.license_category,
+        insurance: patch.insurance !== undefined ? patch.insurance?.trim() || null : cur.insurance,
+        valid_from: patch.valid_from !== undefined ? patch.valid_from?.trim() || null : cur.valid_from,
+        valid_until: patch.valid_until !== undefined ? patch.valid_until?.trim() || null : cur.valid_until,
+        license_pdf_r2_key:
+          patch.license_pdf_r2_key !== undefined ? patch.license_pdf_r2_key : cur.license_pdf_r2_key,
+        license_pdf_filename:
+          patch.license_pdf_filename !== undefined ? patch.license_pdf_filename : cur.license_pdf_filename,
+        license_qr_r2_key:
+          patch.license_qr_r2_key !== undefined ? patch.license_qr_r2_key : cur.license_qr_r2_key,
+      };
+      await db
+        .prepare(
+          `INSERT INTO diver_profile (
+             id, full_name, birth_date, federation, license_number, club_name, club_number,
+             license_category, insurance, valid_from, valid_until,
+             license_pdf_r2_key, license_pdf_filename, license_qr_r2_key, updated_at
+           ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+           ON CONFLICT(id) DO UPDATE SET
+             full_name = excluded.full_name,
+             birth_date = excluded.birth_date,
+             federation = excluded.federation,
+             license_number = excluded.license_number,
+             club_name = excluded.club_name,
+             club_number = excluded.club_number,
+             license_category = excluded.license_category,
+             insurance = excluded.insurance,
+             valid_from = excluded.valid_from,
+             valid_until = excluded.valid_until,
+             license_pdf_r2_key = excluded.license_pdf_r2_key,
+             license_pdf_filename = excluded.license_pdf_filename,
+             license_qr_r2_key = excluded.license_qr_r2_key,
+             updated_at = datetime('now')`,
+        )
+        .bind(
+          next.full_name,
+          next.birth_date,
+          next.federation,
+          next.license_number,
+          next.club_name,
+          next.club_number,
+          next.license_category,
+          next.insurance,
+          next.valid_from,
+          next.valid_until,
+          next.license_pdf_r2_key,
+          next.license_pdf_filename,
+          next.license_qr_r2_key,
+        )
+        .run();
+      return next;
     },
 
     // --- Settings & Suunto ---

@@ -1,11 +1,10 @@
-import { Award, Backpack, Building2, Cpu, FileDown, MapPin, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
+import { Backpack, Building2, Cpu, MapPin, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { LocationPicker } from '../components/LocationPicker';
 import { usePreferences } from '../i18n/I18nContext';
 import { apiClient } from '../services/api';
 import {
   type Buddy,
-  type Certification,
   type DiveCenter,
   type DiveComputer,
   type GearItem,
@@ -15,7 +14,7 @@ interface GearCertsPageProps {
   isOffline: boolean;
 }
 
-type CatalogTab = 'gear' | 'centers' | 'buddies' | 'computers' | 'certs';
+type CatalogTab = 'gear' | 'centers' | 'buddies' | 'computers';
 
 export function GearCertsPage({ isOffline }: GearCertsPageProps) {
   const { t } = usePreferences();
@@ -26,7 +25,6 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
   const [centers, setCenters] = useState<DiveCenter[]>([]);
   const [buddies, setBuddies] = useState<Buddy[]>([]);
   const [computers, setComputers] = useState<DiveComputer[]>([]);
-  const [certs, setCerts] = useState<Certification[]>([]);
 
   // Gear form (Name, Brand, Model, Notes)
   const [gearId, setGearId] = useState<string | undefined>(undefined);
@@ -55,14 +53,6 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
   const [compModel, setCompModel] = useState('');
   const [compNotes, setCompNotes] = useState('');
 
-  // Certifications form
-  const [certId, setCertId] = useState<string | undefined>(undefined);
-  const [agency, setAgency] = useState('');
-  const [level, setLevel] = useState('');
-  const [certLocation, setCertLocation] = useState('');
-  const [issuedDate, setIssuedDate] = useState('');
-  const [certPdfFile, setCertPdfFile] = useState<File | null>(null);
-
   async function reloadCatalog(target: CatalogTab) {
     switch (target) {
       case 'gear':
@@ -77,9 +67,6 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
       case 'computers':
         setComputers((await apiClient.fetchComputers()).data);
         break;
-      case 'certs':
-        setCerts((await apiClient.fetchCertifications()).data);
-        break;
     }
   }
 
@@ -89,13 +76,11 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
       apiClient.fetchCenters(),
       apiClient.fetchBuddies(),
       apiClient.fetchComputers(),
-      apiClient.fetchCertifications(),
-    ]).then(([g, c, b, comp, cr]) => {
+    ]).then(([g, c, b, comp]) => {
       setGear(g.data);
       setCenters(c.data);
       setBuddies(b.data);
       setComputers(comp.data);
-      setCerts(cr.data);
     });
   }, []);
 
@@ -128,15 +113,6 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
     setCompBrand('');
     setCompModel('');
     setCompNotes('');
-  }
-
-  function resetCertForm() {
-    setCertId(undefined);
-    setAgency('');
-    setLevel('');
-    setCertLocation('');
-    setIssuedDate('');
-    setCertPdfFile(null);
   }
 
   async function handleSaveGear(e: FormEvent) {
@@ -194,30 +170,12 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
     await reloadCatalog('computers');
   }
 
-  async function handleSaveCert(e: FormEvent) {
-    e.preventDefault();
-    if (isOffline || !agency.trim() || !level.trim()) return;
-    const saved = await apiClient.saveCertification({
-      id: certId,
-      agency: agency.trim(),
-      level: level.trim(),
-      location: certLocation.trim() || null,
-      issued_date: issuedDate || null,
-    });
-    if (certPdfFile) {
-      await apiClient.uploadCertificationPdf(saved.id, certPdfFile);
-    }
-    resetCertForm();
-    await reloadCatalog('certs');
-  }
-
   async function executeDelete(kind: CatalogTab, id: string) {
     setConfirmDeleteId(null);
     if (kind === 'gear') await apiClient.deleteGear(id);
     else if (kind === 'centers') await apiClient.deleteCenter(id);
     else if (kind === 'buddies') await apiClient.deleteBuddy(id);
     else if (kind === 'computers') await apiClient.deleteComputer(id);
-    else if (kind === 'certs') await apiClient.deleteCertification(id);
     await reloadCatalog(kind);
   }
 
@@ -226,7 +184,6 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
     { id: 'centers', label: t('centersTitle'), count: centers.length },
     { id: 'buddies', label: t('buddiesTitle'), count: buddies.length },
     { id: 'computers', label: t('computersTitle'), count: computers.length },
-    { id: 'certs', label: t('certsTitle'), count: certs.length },
   ];
 
   function renderRowActions(kind: CatalogTab, id: string, onEdit: () => void) {
@@ -692,138 +649,6 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
                 </li>
               );
             })}
-          </ul>
-        </div>
-      )}
-
-      {/* 5. Certifications */}
-      {tab === 'certs' && (
-        <div className="panel-surface p-4 sm:p-5 space-y-4">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-base font-semibold text-slate-900">{t('certsTitle')}</h2>
-            {certId && (
-              <button
-                type="button"
-                onClick={resetCertForm}
-                className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-                {t('editingLabel')} · {t('cancel')}
-              </button>
-            )}
-          </div>
-          {!isOffline && (
-            <form
-              onSubmit={(e) => void handleSaveCert(e)}
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 items-end"
-            >
-              <label className="space-y-1 text-xs font-medium text-slate-700">
-                <span>{t('certAgency')}</span>
-                <input
-                  type="text"
-                  required
-                  value={agency}
-                  onChange={(e) => setAgency(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
-                />
-              </label>
-              <label className="space-y-1 text-xs font-medium text-slate-700">
-                <span>{t('certLevel')}</span>
-                <input
-                  type="text"
-                  required
-                  value={level}
-                  onChange={(e) => setLevel(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
-                />
-              </label>
-              <label className="space-y-1 text-xs font-medium text-slate-700">
-                <span>{t('certLocation')}</span>
-                <input
-                  type="text"
-                  value={certLocation}
-                  onChange={(e) => setCertLocation(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900"
-                />
-              </label>
-              <label className="space-y-1 text-xs font-medium text-slate-700">
-                <span>{t('issuedDate')}</span>
-                <input
-                  type="date"
-                  value={issuedDate}
-                  onChange={(e) => setIssuedDate(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
-                />
-              </label>
-              <label className="space-y-1 text-xs font-medium text-slate-700">
-                <span>{t('certPdf')}</span>
-                <input
-                  type="file"
-                  accept="application/pdf,.pdf"
-                  onChange={(e) => setCertPdfFile(e.target.files?.[0] ?? null)}
-                  className="w-full px-2 py-1.5 rounded-lg border border-slate-300 bg-white text-xs text-slate-700 file:mr-2 file:rounded file:border-0 file:bg-sky-50 file:px-2 file:py-1 file:text-xs file:font-medium file:text-sky-700"
-                />
-              </label>
-              <button
-                type="submit"
-                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white text-sm font-medium px-3 py-2 cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                {certId ? t('saveChanges') : t('addCert')}
-              </button>
-            </form>
-          )}
-          <ul className="space-y-2.5">
-            {certs.map((c) => (
-              <li
-                key={c.id}
-                className="rounded-xl border border-sky-200/75 bg-sky-50/35 hover:bg-sky-50/75 transition-colors px-4 py-3 flex flex-wrap sm:flex-nowrap items-center justify-between gap-3"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="w-9 h-9 rounded-lg bg-sky-100/90 text-sky-700 inline-flex items-center justify-center shrink-0">
-                    <Award className="w-4 h-4" />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-900 truncate">
-                      {c.level}
-                    </p>
-                    <p className="text-xs text-slate-600 truncate mt-0.5">{c.agency}</p>
-                    {(c.location || c.issued_date) && (
-                      <p className="text-xs text-slate-500 tabular-telemetry inline-flex flex-wrap items-center gap-1.5 mt-0.5">
-                        {c.location && (
-                          <span className="inline-flex items-center gap-1">
-                            <MapPin className="w-3 h-3 text-sky-600 shrink-0" />
-                            {c.location}
-                          </span>
-                        )}
-                        {c.location && c.issued_date && <span>·</span>}
-                        {c.issued_date && <span>{c.issued_date}</span>}
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {c.pdf_r2_key && !isOffline && (
-                    <a
-                      href={apiClient.getCertificationPdfUrl(c.id)}
-                      download={c.pdf_filename || `${c.level}.pdf`}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-white hover:bg-sky-100 text-sky-800 text-xs font-medium px-3 py-1.5 transition-colors"
-                    >
-                      <FileDown className="w-3.5 h-3.5 text-sky-600" />
-                      <span>{t('downloadPdf')}</span>
-                    </a>
-                  )}
-                  {renderRowActions('certs', c.id, () => {
-                    setCertId(c.id);
-                    setAgency(c.agency);
-                    setLevel(c.level);
-                    setCertLocation(c.location ?? '');
-                    setIssuedDate(c.issued_date ?? '');
-                    setCertPdfFile(null);
-                  })}
-                </div>
-              </li>
-            ))}
           </ul>
         </div>
       )}

@@ -7,6 +7,7 @@ import {
   type DiveDetail,
   type DiveSite,
   type DiveSummary,
+  type DiverProfile,
   type DraftFitInit,
   type GearItem,
   type GlobalStats,
@@ -425,6 +426,47 @@ export const apiClient = {
 
   async deleteCertification(id: string): Promise<void> {
     await apiJson(`/api/certifications/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
+
+  // --- Diver Profile & License ---
+  async fetchProfile(): Promise<{ data: DiverProfile | null; offline: boolean }> {
+    try {
+      const { profile } = await apiJson<{ profile: DiverProfile }>('/api/profile');
+      return { data: profile, offline: false };
+    } catch {
+      return { data: null, offline: true };
+    }
+  },
+
+  async updateProfile(patch: Partial<DiverProfile>): Promise<DiverProfile> {
+    const { profile } = await apiJson<{ profile: DiverProfile }>('/api/profile', {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    });
+    return profile;
+  },
+
+  async uploadLicensePdf(file: File): Promise<DiverProfile> {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch('/api/profile/license-pdf', {
+      method: 'POST',
+      credentials: 'include',
+      body: form,
+    });
+    if (!res.ok) {
+      throw new Error(`License PDF upload failed (${res.status})`);
+    }
+    const data = (await res.json()) as { profile: DiverProfile };
+    return data.profile;
+  },
+
+  getLicensePdfUrl(): string {
+    return '/api/profile/license-pdf';
+  },
+
+  getLicenseQrUrl(): string {
+    return '/api/profile/license-qr';
   },
 
   // --- Settings & Suunto ---

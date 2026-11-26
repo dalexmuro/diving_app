@@ -25,6 +25,9 @@ const NewDiveChoicePage = lazy(() =>
   import('./pages/NewDiveChoicePage').then((m) => ({ default: m.NewDiveChoicePage })),
 );
 const SitesPage = lazy(() => import('./pages/SitesPage').then((m) => ({ default: m.SitesPage })));
+const ProfilePage = lazy(() =>
+  import('./pages/ProfilePage').then((m) => ({ default: m.ProfilePage })),
+);
 const GearCertsPage = lazy(() =>
   import('./pages/GearCertsPage').then((m) => ({ default: m.GearCertsPage })),
 );
@@ -48,6 +51,7 @@ const VALID_VIEWS: readonly AppView[] = [
   'new-dive-choice',
   'dive-detail',
   'sites',
+  'profile',
   'gear-certs',
   'calculators',
   'settings',
@@ -472,6 +476,7 @@ export function App() {
           {activeView === 'sites' && (
             <SitesPage isOffline={isOffline} dives={dives} onSelectDive={openDiveDetail} />
           )}
+          {activeView === 'profile' && <ProfilePage isOffline={isOffline} />}
           {activeView === 'gear-certs' && <GearCertsPage isOffline={isOffline} />}
           {activeView === 'calculators' && <CalculatorsPage />}
           {activeView === 'settings' && (
