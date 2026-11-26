@@ -59,7 +59,6 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
   const [certId, setCertId] = useState<string | undefined>(undefined);
   const [agency, setAgency] = useState('');
   const [level, setLevel] = useState('');
-  const [certNumber, setCertNumber] = useState('');
   const [issuedDate, setIssuedDate] = useState('');
 
   async function reloadCatalog(target: CatalogTab) {
@@ -133,7 +132,6 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
     setCertId(undefined);
     setAgency('');
     setLevel('');
-    setCertNumber('');
     setIssuedDate('');
   }
 
@@ -199,7 +197,6 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
       id: certId,
       agency: agency.trim(),
       level: level.trim(),
-      cert_number: certNumber.trim() || null,
       issued_date: issuedDate || null,
     });
     resetCertForm();
@@ -710,7 +707,7 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
           {!isOffline && (
             <form
               onSubmit={(e) => void handleSaveCert(e)}
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end"
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end"
             >
               <label className="space-y-1 text-xs font-medium text-slate-700">
                 <span>{t('certAgency')}</span>
@@ -733,15 +730,6 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
                 />
               </label>
               <label className="space-y-1 text-xs font-medium text-slate-700">
-                <span>{t('certNumber')}</span>
-                <input
-                  type="text"
-                  value={certNumber}
-                  onChange={(e) => setCertNumber(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm tabular-telemetry text-slate-900"
-                />
-              </label>
-              <label className="space-y-1 text-xs font-medium text-slate-700">
                 <span>{t('issuedDate')}</span>
                 <input
                   type="date"
@@ -760,38 +748,34 @@ export function GearCertsPage({ isOffline }: GearCertsPageProps) {
             </form>
           )}
           <ul className="space-y-2.5">
-            {certs.map((c) => {
-              const meta = [c.cert_number, c.issued_date].filter(Boolean).join(' · ');
-              return (
-                <li
-                  key={c.id}
-                  className="rounded-xl border border-sky-200/75 bg-sky-50/35 hover:bg-sky-50/75 transition-colors px-4 py-3 flex items-center justify-between gap-3"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="w-9 h-9 rounded-lg bg-sky-100/90 text-sky-700 inline-flex items-center justify-center shrink-0">
-                      <Award className="w-4 h-4" />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-900 truncate">
-                        {c.agency} · {c.level}
+            {certs.map((c) => (
+              <li
+                key={c.id}
+                className="rounded-xl border border-sky-200/75 bg-sky-50/35 hover:bg-sky-50/75 transition-colors px-4 py-3 flex items-center justify-between gap-3"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="w-9 h-9 rounded-lg bg-sky-100/90 text-sky-700 inline-flex items-center justify-center shrink-0">
+                    <Award className="w-4 h-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-900 truncate">
+                      {c.agency} · {c.level}
+                    </p>
+                    {c.issued_date && (
+                      <p className="text-xs text-slate-500 tabular-telemetry truncate mt-0.5">
+                        {c.issued_date}
                       </p>
-                      {meta && (
-                        <p className="text-xs text-slate-500 tabular-telemetry truncate mt-0.5">
-                          {meta}
-                        </p>
-                      )}
-                    </div>
+                    )}
                   </div>
-                  {renderRowActions('certs', c.id, () => {
-                    setCertId(c.id);
-                    setAgency(c.agency);
-                    setLevel(c.level);
-                    setCertNumber(c.cert_number ?? '');
-                    setIssuedDate(c.issued_date ?? '');
-                  })}
-                </li>
-              );
-            })}
+                </div>
+                {renderRowActions('certs', c.id, () => {
+                  setCertId(c.id);
+                  setAgency(c.agency);
+                  setLevel(c.level);
+                  setIssuedDate(c.issued_date ?? '');
+                })}
+              </li>
+            ))}
           </ul>
         </div>
       )}
