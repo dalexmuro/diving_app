@@ -1,9 +1,11 @@
-import { AlertTriangle, X } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight, RotateCcw, X, ZoomIn, ZoomOut } from 'lucide-react';
 import {
   type KeyboardEvent,
   type PointerEvent,
   memo,
+  useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -70,13 +72,22 @@ export const DiveProfileChart = memo(function DiveProfileChart({
   decoStops = [],
 }: DiveProfileChartProps) {
   const { unitSystem, ascentLimitMMin, t } = usePreferences();
+  const clipId = useId();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const draggingRef = useRef(false);
+  const activePointersRef = useRef<Map<number, number>>(new Map());
+  const pinchStartRef = useRef<{
+    dist: number;
+    midRatio: number;
+    startS: number;
+    endS: number;
+  } | null>(null);
 
   const [selected, setSelected] = useState<PlottedProfilePoint | null>(null);
   const [layers, setLayers] = useState<ChartLayerPrefs>(loadLayerPrefs);
   const [containerWidth, setContainerWidth] = useState(920);
+  const [zoomWindow, setZoomWindow] = useState<{ startS: number; endS: number } | null>(null);
 
   // Observe container width so SVG coordinate system adapts cleanly to mobile vs desktop
   useEffect(() => {
@@ -114,30 +125,153 @@ export const DiveProfileChart = memo(function DiveProfileChart({
   const plotW = svgW - padLeft - padRight;
   const plotH = svgH - padTop - padBottom;
 
-  // Fixed-step depth (every 5 m) and time (every 5 or 10 min) axis ceilings
-  const depthStepM = 5;
-  const axisMaxDepthM = Math.max(
-    depthStepM,
-    Math.ceil(Math.max(profile.maxDepthM, 1) / depthStepM) * depthStepM,
-  );
-  const timeStepMin = isCompact
+  // Reset zoom whenever the underlying dive samples change
+  useEffect(() => {
+    setZoomWindow(null);
+    setSelected(null);
+  }, [samples]);
+
+  // Base full-dive time ceiling (rounded to 5 or 10 min)
+  const baseTimeStepMin = isCompact
     ? profile.maxElapsedS <= 25 * 60
       ? 5
       : 10
     : profile.maxElapsedS <= 35 * 60
       ? 5
       : 10;
-  const timeStepS = timeStepMin * 60;
-  const axisMaxElapsedS = Math.max(
-    timeStepS,
-    Math.ceil(Math.max(profile.maxElapsedS, 1) / timeStepS) * timeStepS,
+  const baseTimeStepS = baseTimeStepMin * 60;
+  const fullAxisMaxElapsedS = Math.max(
+    baseTimeStepS,
+    Math.ceil(Math.max(profile.maxElapsedS, 1) / baseTimeStepS) * baseTimeStepS,
   );
+
+  // Active visible time window [viewStartS, viewEndS]
+  const viewStartS = zoomWindow ? Math.max(0, Math.min(zoomWindow.startS, fullAxisMaxElapsedS - 60)) : 0;
+  const viewEndS = zoomWindow
+    ? Math.max(viewStartS + 60, Math.min(zoomWindow.endS, fullAxisMaxElapsedS))
+    : fullAxisMaxElapsedS;
+  const viewSpanS = Math.max(60, viewEndS - viewStartS);
+  const isZoomed = zoomWindow !== null && (viewStartS > 0.5 || viewEndS < fullAxisMaxElapsedS - 0.5);
+  const zoomFactor = fullAxisMaxElapsedS / viewSpanS;
+  const minWindowS = Math.min(60, fullAxisMaxElapsedS);
+
+  // Auto-adjust time tick interval based on visible zoomed window
+  const timeStepS =
+    viewSpanS <= 180
+      ? 30
+      : viewSpanS <= 420
+        ? 60
+        : viewSpanS <= 1080
+          ? 120
+          : viewSpanS <= (isCompact ? 1500 : 2100)
+            ? 300
+            : 600;
+
+  // Auto-adjust depth scale based on visible points when zoomed (fixed 5 m at 1x, 2 m when zoomed shallow)
+  const { depthStepM, axisMaxDepthM } = useMemo(() => {
+    if (!isZoomed || profile.points.length === 0) {
+      const step = 5;
+      return {
+        depthStepM: step,
+        axisMaxDepthM: Math.max(step, Math.ceil(Math.max(profile.maxDepthM, 1) / step) * step),
+      };
+    }
+    let visMax = 0;
+    for (const p of profile.points) {
+      if (p.elapsedS >= viewStartS && p.elapsedS <= viewEndS && p.depthM > visMax) {
+        visMax = p.depthM;
+      }
+    }
+    if (profile.maxElapsedS > 0) {
+      const pStart = interpolateProfilePoint(profile.points, viewStartS / profile.maxElapsedS);
+      const pEnd = interpolateProfilePoint(profile.points, viewEndS / profile.maxElapsedS);
+      if (pStart && pStart.depthM > visMax) visMax = pStart.depthM;
+      if (pEnd && pEnd.depthM > visMax) visMax = pEnd.depthM;
+    }
+    const safeMax = Math.max(visMax, 1);
+    const step = safeMax <= 10 ? 2 : 5;
+    return {
+      depthStepM: step,
+      axisMaxDepthM: Math.max(step, Math.ceil(safeMax / step) * step),
+    };
+  }, [isZoomed, profile.points, profile.maxDepthM, profile.maxElapsedS, viewStartS, viewEndS]);
+
+  const applyZoom = useCallback(
+    (factor: number, anchorS?: number) => {
+      const curStart = zoomWindow ? zoomWindow.startS : 0;
+      const curEnd = zoomWindow ? zoomWindow.endS : fullAxisMaxElapsedS;
+      const curSpan = curEnd - curStart;
+      const center =
+        anchorS != null
+          ? Math.max(curStart, Math.min(curEnd, anchorS))
+          : (curStart + curEnd) / 2;
+      const ratio = curSpan > 0 ? (center - curStart) / curSpan : 0.5;
+      const nextSpan = Math.max(minWindowS, Math.min(fullAxisMaxElapsedS, curSpan / factor));
+      if (nextSpan >= fullAxisMaxElapsedS - 1) {
+        setZoomWindow(null);
+        return;
+      }
+      let nextStart = center - ratio * nextSpan;
+      let nextEnd = nextStart + nextSpan;
+      if (nextStart < 0) {
+        nextStart = 0;
+        nextEnd = nextSpan;
+      }
+      if (nextEnd > fullAxisMaxElapsedS) {
+        nextEnd = fullAxisMaxElapsedS;
+        nextStart = Math.max(0, fullAxisMaxElapsedS - nextSpan);
+      }
+      setZoomWindow({ startS: nextStart, endS: nextEnd });
+    },
+    [zoomWindow, fullAxisMaxElapsedS, minWindowS],
+  );
+
+  const panBy = useCallback(
+    (direction: -1 | 1) => {
+      if (!zoomWindow) return;
+      const span = zoomWindow.endS - zoomWindow.startS;
+      const delta = span * 0.25 * direction;
+      let nextStart = zoomWindow.startS + delta;
+      let nextEnd = zoomWindow.endS + delta;
+      if (nextStart < 0) {
+        nextStart = 0;
+        nextEnd = span;
+      }
+      if (nextEnd > fullAxisMaxElapsedS) {
+        nextEnd = fullAxisMaxElapsedS;
+        nextStart = Math.max(0, fullAxisMaxElapsedS - span);
+      }
+      setZoomWindow({ startS: nextStart, endS: nextEnd });
+    },
+    [zoomWindow, fullAxisMaxElapsedS],
+  );
+
+  // Non-passive wheel listener on container so mouse-wheel zooms smoothly without scrolling page
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      e.preventDefault();
+      const rect = svg.getBoundingClientRect();
+      if (rect.width <= 0) return;
+      const scaleX = svgW / rect.width;
+      const svgX = (e.clientX - rect.left) * scaleX;
+      const axisRatio = Math.max(0, Math.min(1, (svgX - padLeft) / plotW));
+      const anchorS = viewStartS + axisRatio * viewSpanS;
+      const factor = e.deltaY < 0 ? 1.35 : 1 / 1.35;
+      applyZoom(factor, anchorS);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [applyZoom, svgW, padLeft, plotW, viewStartS, viewSpanS]);
 
   // Precompute all SVG paths in useMemo so scrubbing/tapping never rebuilds path strings
   const geometry = useMemo(() => {
     if (profile.points.length === 0) return null;
 
-    const toX = (p: PlottedProfilePoint) => padLeft + (p.elapsedS / axisMaxElapsedS) * plotW;
+    const toX = (p: PlottedProfilePoint) => padLeft + ((p.elapsedS - viewStartS) / viewSpanS) * plotW;
     const toY = (p: PlottedProfilePoint) => padTop + (p.depthM / axisMaxDepthM) * plotH;
 
     const tempPoints = profile.points.filter((p) => p.tempC != null);
@@ -225,46 +359,103 @@ export const DiveProfileChart = memo(function DiveProfileChart({
       maxTempC,
       tempSpan,
     };
-  }, [profile, padLeft, padTop, plotW, plotH, axisMaxElapsedS, axisMaxDepthM]);
+  }, [profile, padLeft, padTop, plotW, plotH, viewStartS, viewSpanS, axisMaxDepthM]);
 
   if (!geometry || profile.points.length === 0) {
     return null;
   }
 
-  const toX = (p: PlottedProfilePoint) => padLeft + (p.elapsedS / axisMaxElapsedS) * plotW;
+  const toX = (p: PlottedProfilePoint) => padLeft + ((p.elapsedS - viewStartS) / viewSpanS) * plotW;
   const toY = (p: PlottedProfilePoint) => padTop + (p.depthM / axisMaxDepthM) * plotH;
 
-  function selectAtClientX(clientX: number) {
+  function clientXToAxisRatio(clientX: number): number | null {
     const svg = svgRef.current;
-    if (!svg) return;
+    if (!svg) return null;
     const rect = svg.getBoundingClientRect();
-    if (rect.width <= 0) return;
+    if (rect.width <= 0) return null;
     const scaleX = svgW / rect.width;
     const svgX = (clientX - rect.left) * scaleX;
-    const axisRatio = (svgX - padLeft) / plotW;
-    const targetElapsedS = axisRatio * axisMaxElapsedS;
+    return Math.max(0, Math.min(1, (svgX - padLeft) / plotW));
+  }
+
+  function selectAtClientX(clientX: number) {
+    const axisRatio = clientXToAxisRatio(clientX);
+    if (axisRatio == null) return;
+    const targetElapsedS = viewStartS + axisRatio * viewSpanS;
     const pointRatio = profile.maxElapsedS > 0 ? targetElapsedS / profile.maxElapsedS : 0;
     const interpolated = interpolateProfilePoint(profile.points, pointRatio);
     setSelected(interpolated);
   }
 
   function handlePointerDown(e: PointerEvent<SVGSVGElement>) {
-    draggingRef.current = true;
+    activePointersRef.current.set(e.pointerId, e.clientX);
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
       // Ignore capture errors on synthetic events
     }
+
+    if (activePointersRef.current.size === 2) {
+      draggingRef.current = false;
+      const xs = [...activePointersRef.current.values()];
+      const dist = Math.max(10, Math.abs(xs[1] - xs[0]));
+      const midRatio = clientXToAxisRatio((xs[0] + xs[1]) / 2) ?? 0.5;
+      pinchStartRef.current = {
+        dist,
+        midRatio,
+        startS: viewStartS,
+        endS: viewEndS,
+      };
+      return;
+    }
+
+    draggingRef.current = true;
     selectAtClientX(e.clientX);
   }
 
   function handlePointerMove(e: PointerEvent<SVGSVGElement>) {
+    if (activePointersRef.current.has(e.pointerId)) {
+      activePointersRef.current.set(e.pointerId, e.clientX);
+    }
+
+    if (activePointersRef.current.size === 2 && pinchStartRef.current) {
+      const xs = [...activePointersRef.current.values()];
+      const curDist = Math.max(10, Math.abs(xs[1] - xs[0]));
+      const scale = curDist / pinchStartRef.current.dist;
+      const baseSpan = pinchStartRef.current.endS - pinchStartRef.current.startS;
+      const nextSpan = Math.max(minWindowS, Math.min(fullAxisMaxElapsedS, baseSpan / scale));
+      if (nextSpan >= fullAxisMaxElapsedS - 1) {
+        setZoomWindow(null);
+        return;
+      }
+      const anchorS =
+        pinchStartRef.current.startS + pinchStartRef.current.midRatio * baseSpan;
+      let nextStart = anchorS - pinchStartRef.current.midRatio * nextSpan;
+      let nextEnd = nextStart + nextSpan;
+      if (nextStart < 0) {
+        nextStart = 0;
+        nextEnd = nextSpan;
+      }
+      if (nextEnd > fullAxisMaxElapsedS) {
+        nextEnd = fullAxisMaxElapsedS;
+        nextStart = Math.max(0, fullAxisMaxElapsedS - nextSpan);
+      }
+      setZoomWindow({ startS: nextStart, endS: nextEnd });
+      return;
+    }
+
     if (!draggingRef.current) return;
     selectAtClientX(e.clientX);
   }
 
   function handlePointerUp(e: PointerEvent<SVGSVGElement>) {
-    draggingRef.current = false;
+    activePointersRef.current.delete(e.pointerId);
+    if (activePointersRef.current.size < 2) {
+      pinchStartRef.current = null;
+    }
+    if (activePointersRef.current.size === 0) {
+      draggingRef.current = false;
+    }
     try {
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId);
@@ -296,8 +487,9 @@ export const DiveProfileChart = memo(function DiveProfileChart({
     yDepthTicks.push(d);
   }
   const xTimeTicksS: number[] = [];
-  for (let s = 0; s <= axisMaxElapsedS; s += timeStepS) {
-    xTimeTicksS.push(s);
+  const firstTickS = Math.ceil(viewStartS / timeStepS) * timeStepS;
+  for (let s = firstTickS; s <= viewEndS + 0.01; s += timeStepS) {
+    xTimeTicksS.push(Math.round(s));
   }
   const tempTicks = [0, 0.25, 0.5, 0.75, 1];
   const effectiveTotalDuration = totalDurationS ?? profile.maxElapsedS;
@@ -308,18 +500,87 @@ export const DiveProfileChart = memo(function DiveProfileChart({
   return (
     <div className="panel-surface p-4 sm:p-5 space-y-3.5 relative">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-base font-semibold text-slate-900">{t('diveProfile')}</h2>
-        {selected && (
-          <button
-            type="button"
-            aria-label={t('cancel')}
-            onClick={() => setSelected(null)}
-            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-100 cursor-pointer"
-          >
-            <X className="w-3.5 h-3.5" />
-            <span>{t('cancel')}</span>
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <h2 className="text-base font-semibold text-slate-900">{t('diveProfile')}</h2>
+          {isZoomed && (
+            <span className="rounded-full bg-sky-100 border border-sky-200 px-2 py-0.5 text-[11px] font-semibold text-sky-800 tabular-telemetry">
+              {zoomFactor.toFixed(1)}×
+            </span>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          {isZoomed && (
+            <div className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+              <button
+                type="button"
+                aria-label={t('panLeft')}
+                title={t('panLeft')}
+                disabled={viewStartS <= 0.5}
+                onClick={() => panBy(-1)}
+                className="p-1.5 rounded-md text-slate-600 hover:bg-white hover:text-slate-900 disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                aria-label={t('panRight')}
+                title={t('panRight')}
+                disabled={viewEndS >= fullAxisMaxElapsedS - 0.5}
+                onClick={() => panBy(1)}
+                className="p-1.5 rounded-md text-slate-600 hover:bg-white hover:text-slate-900 disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          <div className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+            <button
+              type="button"
+              aria-label={t('zoomOut')}
+              title={t('zoomOut')}
+              disabled={!isZoomed}
+              onClick={() => applyZoom(1 / 1.6, selected?.elapsedS)}
+              className="p-1.5 rounded-md text-slate-600 hover:bg-white hover:text-slate-900 disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
+            >
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              aria-label={t('zoomIn')}
+              title={t('zoomIn')}
+              disabled={viewSpanS <= minWindowS + 1}
+              onClick={() => applyZoom(1.6, selected?.elapsedS)}
+              className="p-1.5 rounded-md text-slate-600 hover:bg-white hover:text-slate-900 disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
+            >
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
+            {isZoomed && (
+              <button
+                type="button"
+                aria-label={t('resetZoom')}
+                title={t('resetZoom')}
+                onClick={() => setZoomWindow(null)}
+                className="p-1.5 rounded-md text-sky-700 hover:bg-white hover:text-sky-900 cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {selected && (
+            <button
+              type="button"
+              aria-label={t('cancel')}
+              onClick={() => setSelected(null)}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-100 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>{t('cancel')}</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Top Telemetry Readout Bar (never overlaps the dive curve, zero layout shift) */}
@@ -412,7 +673,17 @@ export const DiveProfileChart = memo(function DiveProfileChart({
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
-          style={{ touchAction: 'pan-y' }}
+          onDoubleClick={(e) => {
+            const ratio = clientXToAxisRatio(e.clientX);
+            if (ratio == null) return;
+            const anchorS = viewStartS + ratio * viewSpanS;
+            if (viewSpanS <= minWindowS + 5) {
+              setZoomWindow(null);
+            } else {
+              applyZoom(2, anchorS);
+            }
+          }}
+          style={{ touchAction: isZoomed ? 'none' : 'pan-y' }}
           className="w-full h-auto max-h-[55dvh] cursor-crosshair overflow-visible"
           role="img"
           aria-label={t('diveProfile')}
@@ -422,6 +693,9 @@ export const DiveProfileChart = memo(function DiveProfileChart({
               <stop offset="0%" stopColor="#bae6fd" stopOpacity="0.25" />
               <stop offset="100%" stopColor="#0284c7" stopOpacity="0.65" />
             </linearGradient>
+            <clipPath id={clipId}>
+              <rect x={padLeft} y={padTop} width={plotW} height={plotH} />
+            </clipPath>
           </defs>
 
           {/* Horizontal Depth Gridlines & Left Depth Axis (fixed every 5 m) */}
@@ -472,9 +746,9 @@ export const DiveProfileChart = memo(function DiveProfileChart({
               );
             })}
 
-          {/* Vertical Time Gridlines & Bottom Time Axis (fixed every 5 or 10 min) */}
+          {/* Vertical Time Gridlines & Bottom Time Axis (auto-adjusted to zoomed window) */}
           {xTimeTicksS.map((sec) => {
-            const x = padLeft + (sec / axisMaxElapsedS) * plotW;
+            const x = padLeft + ((sec - viewStartS) / viewSpanS) * plotW;
             return (
               <g key={`x-${sec}`}>
                 <line
@@ -498,8 +772,10 @@ export const DiveProfileChart = memo(function DiveProfileChart({
             );
           })}
 
-          {/* Ocean Depth Gradient Fill */}
-          <path d={geometry.areaPath} fill="url(#diveDepthFill)" />
+          {/* Clipped Plot Area so zoomed curves never overflow axes */}
+          <g clipPath={`url(#${clipId})`}>
+            {/* Ocean Depth Gradient Fill */}
+            <path d={geometry.areaPath} fill="url(#diveDepthFill)" />
 
           {/* Deco / Safety Stops Reference Lines */}
           {layers.showStops &&
@@ -612,6 +888,7 @@ export const DiveProfileChart = memo(function DiveProfileChart({
               />
             </g>
           )}
+          </g>
         </svg>
       </div>
 
