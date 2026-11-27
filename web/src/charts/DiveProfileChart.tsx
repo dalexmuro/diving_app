@@ -139,19 +139,8 @@ export const DiveProfileChart = memo(function DiveProfileChart({
     setSelected(null);
   }, [samples]);
 
-  // Base full-dive time ceiling (rounded to 5 or 10 min)
-  const baseTimeStepMin = isCompact
-    ? profile.maxElapsedS <= 25 * 60
-      ? 5
-      : 10
-    : profile.maxElapsedS <= 35 * 60
-      ? 5
-      : 10;
-  const baseTimeStepS = baseTimeStepMin * 60;
-  const fullAxisMaxElapsedS = Math.max(
-    baseTimeStepS,
-    Math.ceil(Math.max(profile.maxElapsedS, 1) / baseTimeStepS) * baseTimeStepS,
-  );
+  // Exact full-dive duration ceiling (never zoom out past the dive's own duration)
+  const fullAxisMaxElapsedS = Math.max(60, profile.maxElapsedS);
 
   // Active visible time window [viewStartS, viewEndS]
   const viewStartS = zoomWindow ? Math.max(0, Math.min(zoomWindow.startS, fullAxisMaxElapsedS - 60)) : 0;
