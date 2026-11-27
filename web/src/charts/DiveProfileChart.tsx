@@ -76,6 +76,14 @@ export const DiveProfileChart = memo(function DiveProfileChart({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const draggingRef = useRef(false);
+  const panDragRef = useRef<{
+    startClientX: number;
+    startClientY: number;
+    origStartS: number;
+    origEndS: number;
+    moved: boolean;
+  } | null>(null);
+  const [isPanning, setIsPanning] = useState(false);
   const activePointersRef = useRef<Map<number, number>>(new Map());
   const pinchStartRef = useRef<{
     dist: number;
@@ -246,16 +254,37 @@ export const DiveProfileChart = memo(function DiveProfileChart({
     [zoomWindow, fullAxisMaxElapsedS],
   );
 
-  // Non-passive wheel listener on container so mouse-wheel zooms smoothly without scrolling page
+  // Non-passive wheel listener: vertical wheel zooms, horizontal trackpad scroll (or Shift+wheel) pans when zoomed
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       const svg = svgRef.current;
       if (!svg) return;
-      e.preventDefault();
       const rect = svg.getBoundingClientRect();
       if (rect.width <= 0) return;
+
+      const isHorizontalPan =
+        isZoomed && (Math.abs(e.deltaX) > Math.abs(e.deltaY) || (e.shiftKey && e.deltaY !== 0));
+      if (isHorizontalPan) {
+        e.preventDefault();
+        const deltaPx = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+        const deltaS = (deltaPx / rect.width) * viewSpanS;
+        let nextStart = viewStartS + deltaS;
+        let nextEnd = viewEndS + deltaS;
+        if (nextStart < 0) {
+          nextStart = 0;
+          nextEnd = viewSpanS;
+        }
+        if (nextEnd > fullAxisMaxElapsedS) {
+          nextEnd = fullAxisMaxElapsedS;
+          nextStart = Math.max(0, fullAxisMaxElapsedS - viewSpanS);
+        }
+        setZoomWindow({ startS: nextStart, endS: nextEnd });
+        return;
+      }
+
+      e.preventDefault();
       const scaleX = svgW / rect.width;
       const svgX = (e.clientX - rect.left) * scaleX;
       const axisRatio = Math.max(0, Math.min(1, (svgX - padLeft) / plotW));
@@ -265,7 +294,7 @@ export const DiveProfileChart = memo(function DiveProfileChart({
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [applyZoom, svgW, padLeft, plotW, viewStartS, viewSpanS]);
+  }, [applyZoom, isZoomed, fullAxisMaxElapsedS, svgW, padLeft, plotW, viewStartS, viewEndS, viewSpanS]);
 
   // Precompute all SVG paths in useMemo so scrubbing/tapping never rebuilds path strings
   const geometry = useMemo(() => {
@@ -454,6 +483,8 @@ export const DiveProfileChart = memo(function DiveProfileChart({
 
     if (activePointersRef.current.size === 2) {
       draggingRef.current = false;
+      panDragRef.current = null;
+      setIsPanning(false);
       const xs = [...activePointersRef.current.values()];
       const dist = Math.max(10, Math.abs(xs[1] - xs[0]));
       const midRatio = clientXToAxisRatio((xs[0] + xs[1]) / 2) ?? 0.5;
@@ -463,6 +494,19 @@ export const DiveProfileChart = memo(function DiveProfileChart({
         startS: viewStartS,
         endS: viewEndS,
       };
+      return;
+    }
+
+    if (isZoomed) {
+      // When zoomed: drag pans horizontally; tap/click (< 6px move) selects the curve point
+      panDragRef.current = {
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        origStartS: viewStartS,
+        origEndS: viewEndS,
+        moved: false,
+      };
+      draggingRef.current = false;
       return;
     }
 
@@ -501,11 +545,50 @@ export const DiveProfileChart = memo(function DiveProfileChart({
       return;
     }
 
+    if (panDragRef.current) {
+      const dxPx = e.clientX - panDragRef.current.startClientX;
+      if (!panDragRef.current.moved && Math.abs(dxPx) >= 6) {
+        panDragRef.current.moved = true;
+        setIsPanning(true);
+      }
+      if (panDragRef.current.moved) {
+        const svg = svgRef.current;
+        if (!svg) return;
+        const rect = svg.getBoundingClientRect();
+        if (rect.width <= 0) return;
+        const plotWidthPx = (plotW / svgW) * rect.width;
+        const origSpan = panDragRef.current.origEndS - panDragRef.current.origStartS;
+        const deltaS = -(dxPx / Math.max(1, plotWidthPx)) * origSpan;
+        let nextStart = panDragRef.current.origStartS + deltaS;
+        let nextEnd = panDragRef.current.origEndS + deltaS;
+        if (nextStart < 0) {
+          nextStart = 0;
+          nextEnd = origSpan;
+        }
+        if (nextEnd > fullAxisMaxElapsedS) {
+          nextEnd = fullAxisMaxElapsedS;
+          nextStart = Math.max(0, fullAxisMaxElapsedS - origSpan);
+        }
+        setZoomWindow({ startS: nextStart, endS: nextEnd });
+      }
+      return;
+    }
+
     if (!draggingRef.current) return;
     selectAtClientPoint(e.clientX, e.clientY);
   }
 
   function handlePointerUp(e: PointerEvent<SVGSVGElement>) {
+    if (panDragRef.current) {
+      const wasTap = !panDragRef.current.moved;
+      const tapX = e.clientX;
+      const tapY = e.clientY;
+      panDragRef.current = null;
+      setIsPanning(false);
+      if (wasTap) {
+        selectAtClientPoint(tapX, tapY);
+      }
+    }
     activePointersRef.current.delete(e.pointerId);
     if (activePointersRef.current.size < 2) {
       pinchStartRef.current = null;
@@ -741,7 +824,9 @@ export const DiveProfileChart = memo(function DiveProfileChart({
             }
           }}
           style={{ touchAction: isZoomed ? 'none' : 'pan-y' }}
-          className="w-full h-auto max-h-[55dvh] cursor-crosshair overflow-visible"
+          className={`w-full h-auto max-h-[55dvh] overflow-visible ${
+            isZoomed ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-crosshair'
+          }`}
           role="img"
           aria-label={t('diveProfile')}
         >
