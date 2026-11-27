@@ -151,6 +151,11 @@ export async function handleAuthRoutes(
 
   // 4. GET /api/auth/google/callback — Validate state, exchange code, enforce email allowlist
   if (request.method === 'GET' && path === '/api/auth/google/callback') {
+    if (url.searchParams.get('error')) {
+      const headers = new Headers({ Location: `${origin}/` });
+      headers.append('Set-Cookie', buildCookie(OAUTH_STATE_COOKIE_NAME, '', 0, secure));
+      return new Response(null, { status: 302, headers });
+    }
     const code = url.searchParams.get('code');
     const state = url.searchParams.get('state');
     const cookies = parseCookies(request.headers.get('Cookie'));
@@ -193,7 +198,10 @@ export async function handleAuthRoutes(
     const emailVerified = profile.email_verified === true || profile.email_verified === 'true';
 
     if (!emailVerified || !isAuthorizedEmail(profile.email, env.APP_USER_EMAIL)) {
-      return Response.json({ error: 'Account not authorized' }, { status: 403 });
+      const headers = new Headers({ Location: `${origin}/?auth_error=unauthorized` });
+      headers.append('Set-Cookie', buildCookie(SESSION_COOKIE_NAME, '', 0, secure));
+      headers.append('Set-Cookie', buildCookie(OAUTH_STATE_COOKIE_NAME, '', 0, secure));
+      return new Response(null, { status: 302, headers });
     }
 
     const sessionJwt = await signJwt(

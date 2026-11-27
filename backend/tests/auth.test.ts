@@ -150,6 +150,37 @@ describe('Google OAuth & ID token authentication', () => {
     );
     expect(res?.status).toBe(400);
   });
+
+  it('redirects unauthorized Google OAuth callback to UI error screen', async () => {
+    const repo = createMemoryAuthRepo();
+    const stateJwt = await signJwt(
+      { sub: 'oauth', email: TEST_ENV.APP_USER_EMAIL, purpose: 'oauth_state', nonce: 'nonce-123' },
+      TEST_ENV.APP_JWT_SECRET,
+      600,
+    );
+    const mockFetch: FetchLike = async (url) => {
+      const u = String(url);
+      if (u.includes('oauth2.googleapis.com/token')) {
+        return Response.json({ access_token: 'mock-access-token' });
+      }
+      return Response.json({
+        sub: 'google-other',
+        email: 'stranger@example.com',
+        email_verified: true,
+      });
+    };
+
+    const res = await handleAuthRoutes(
+      new Request('https://diving.example.com/api/auth/google/callback?code=ok&state=nonce-123', {
+        headers: { Cookie: `diving_oauth_state=${stateJwt}` },
+      }),
+      TEST_ENV,
+      repo,
+      mockFetch,
+    );
+    expect(res?.status).toBe(302);
+    expect(res?.headers.get('Location')).toBe('https://diving.example.com/?auth_error=unauthorized');
+  });
 });
 
 describe('WebAuthn / Passkey biometric registration and unlock', () => {

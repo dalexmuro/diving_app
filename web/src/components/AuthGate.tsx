@@ -1,5 +1,5 @@
-import { Fingerprint, Globe, HardDrive } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowLeft, Fingerprint, Globe, HardDrive, ShieldAlert } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { usePreferences } from '../i18n/I18nContext';
 import { apiClient } from '../services/api';
 
@@ -40,6 +40,20 @@ export function AuthGate({
   const { language, t, setPreferences } = usePreferences();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [unauthorized, setUnauthorized] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return new URLSearchParams(window.location.search).get('auth_error') === 'unauthorized';
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('auth_error')) {
+      params.delete('auth_error');
+      const qs = params.toString();
+      window.history.replaceState({}, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
+    }
+  }, []);
 
   const supportsWebAuthn =
     typeof window !== 'undefined' && typeof window.PublicKeyCredential !== 'undefined';
@@ -75,56 +89,100 @@ export function AuthGate({
       </header>
 
       <main className="max-w-md w-full mx-auto my-auto py-10">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-6 space-y-6">
-          <div className="space-y-2">
-            <h1 className="text-xl font-semibold tracking-tight text-white">
-              {t('authTitle')}
-            </h1>
-            <p className="text-sm text-slate-300 leading-relaxed">{t('authSubtitle')}</p>
-          </div>
-
-          {error && (
-            <div
-              role="alert"
-              className="rounded-lg border border-red-500/40 bg-red-950/60 px-3.5 py-2.5 text-xs text-red-200"
-            >
-              {error}
+        {unauthorized ? (
+          <div
+            role="alert"
+            className="rounded-2xl border border-red-500/30 bg-slate-900/95 p-7 space-y-6 text-center shadow-xl"
+          >
+            <div className="mx-auto w-14 h-14 rounded-2xl bg-red-500/15 border border-red-500/30 flex items-center justify-center">
+              <ShieldAlert className="w-7 h-7 text-red-400" />
             </div>
-          )}
 
-          <div className="space-y-3">
-            <a
-              href="/api/auth/google"
-              className="w-full inline-flex items-center justify-center gap-2.5 rounded-lg bg-white hover:bg-slate-100 text-slate-900 font-medium text-sm px-4 py-2.5 transition-colors"
-            >
-              <GoogleIcon />
-              <span>{t('signInGoogle')}</span>
-            </a>
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-widest text-red-400">
+                403 · Forbidden
+              </p>
+              <h1 className="text-xl font-bold tracking-tight text-white">
+                {t('authUnauthorizedTitle')}
+              </h1>
+              <p className="text-sm text-slate-300 leading-relaxed">
+                {t('authUnauthorizedMessage')}
+              </p>
+              <p className="text-xs text-slate-400 leading-relaxed pt-1">
+                {t('authUnauthorizedHint')}
+              </p>
+            </div>
 
-            {supportsWebAuthn && (
+            <div className="space-y-2.5 pt-2">
+              <a
+                href="/api/auth/google"
+                className="w-full inline-flex items-center justify-center gap-2.5 rounded-lg bg-white hover:bg-slate-100 text-slate-900 font-medium text-sm px-4 py-2.5 transition-colors"
+              >
+                <GoogleIcon />
+                <span>{t('authTryAnotherAccount')}</span>
+              </a>
               <button
                 type="button"
-                disabled={busy}
-                onClick={handleFingerprintUnlock}
-                className="w-full inline-flex items-center justify-center gap-2.5 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 disabled:opacity-50 text-slate-100 font-medium text-sm px-4 py-2.5 transition-colors cursor-pointer"
+                onClick={() => setUnauthorized(false)}
+                className="w-full inline-flex items-center justify-center gap-2 rounded-lg border border-slate-700 bg-slate-800/70 hover:bg-slate-800 text-slate-200 font-medium text-xs px-4 py-2.5 transition-colors cursor-pointer"
               >
-                <Fingerprint className="w-4 h-4 text-sky-400" />
-                {t('unlockFingerprint')}
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>{t('authBackToLogin')}</span>
               </button>
-            )}
-
-            {hasCachedData && (
-              <button
-                type="button"
-                onClick={onEnterOfflineMode}
-                className="w-full inline-flex items-center justify-center gap-2.5 rounded-lg border border-slate-800 hover:bg-slate-800/60 text-slate-300 font-medium text-xs px-4 py-2 transition-colors cursor-pointer"
-              >
-                <HardDrive className="w-4 h-4 text-amber-400" />
-                {t('viewCachedOffline')}
-              </button>
-            )}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-6 space-y-6">
+            <div className="space-y-2">
+              <h1 className="text-xl font-semibold tracking-tight text-white">
+                {t('authTitle')}
+              </h1>
+              <p className="text-sm text-slate-300 leading-relaxed">{t('authSubtitle')}</p>
+            </div>
+
+            {error && (
+              <div
+                role="alert"
+                className="rounded-lg border border-red-500/40 bg-red-950/60 px-3.5 py-2.5 text-xs text-red-200"
+              >
+                {error}
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <a
+                href="/api/auth/google"
+                className="w-full inline-flex items-center justify-center gap-2.5 rounded-lg bg-white hover:bg-slate-100 text-slate-900 font-medium text-sm px-4 py-2.5 transition-colors"
+              >
+                <GoogleIcon />
+                <span>{t('signInGoogle')}</span>
+              </a>
+
+              {supportsWebAuthn && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={handleFingerprintUnlock}
+                  className="w-full inline-flex items-center justify-center gap-2.5 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 disabled:opacity-50 text-slate-100 font-medium text-sm px-4 py-2.5 transition-colors cursor-pointer"
+                >
+                  <Fingerprint className="w-4 h-4 text-sky-400" />
+                  {t('unlockFingerprint')}
+                </button>
+              )}
+
+              {hasCachedData && (
+                <button
+                  type="button"
+                  onClick={onEnterOfflineMode}
+                  className="w-full inline-flex items-center justify-center gap-2.5 rounded-lg border border-slate-800 hover:bg-slate-800/60 text-slate-300 font-medium text-xs px-4 py-2 transition-colors cursor-pointer"
+                >
+                  <HardDrive className="w-4 h-4 text-amber-400" />
+                  {t('viewCachedOffline')}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </main>
 
       <footer className="max-w-md w-full mx-auto text-center text-xs text-slate-400">
