@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildProfileGeometry,
   findNearestProfilePoint,
+  interpolateProfilePoint,
 } from '../src/charts/profileGeometry';
 import { extractAvailableYears, filterDives } from '../src/services/logbookFilter';
 import { type DiveSummary } from '../src/types/domain';
@@ -35,6 +36,13 @@ describe('Interactive dive profile geometry & >15 m/min red violations', () => {
     const snapped = findNearestProfilePoint(profile.points, 0.74);
     expect(snapped?.elapsedS).toBe(90);
     expect(snapped?.exceedsAscentLimit).toBe(true);
+
+    // Midpoint click on red ascent-alert segment (60s..90s -> 75s) interpolates depth & keeps alert active
+    const midAlert = interpolateProfilePoint(profile.points, 75 / 120);
+    expect(midAlert?.elapsedS).toBe(75);
+    expect(midAlert?.depthM).toBe(15);
+    expect(midAlert?.exceedsAscentLimit).toBe(true);
+    expect(midAlert?.ascentRateMMin).toBe(20);
   });
 
   it('handles binary-search edge cases for empty, single, and out-of-bounds ratios', () => {

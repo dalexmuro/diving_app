@@ -23,7 +23,7 @@ import { type DecoStop, type TelemetrySample } from '../types/domain';
 import {
   type PlottedProfilePoint,
   buildProfileGeometry,
-  findNearestProfilePoint,
+  interpolateProfilePoint,
 } from './profileGeometry';
 
 interface DiveProfileChartProps {
@@ -114,12 +114,31 @@ export const DiveProfileChart = memo(function DiveProfileChart({
   const plotW = svgW - padLeft - padRight;
   const plotH = svgH - padTop - padBottom;
 
+  // Fixed-step depth (every 5 m) and time (every 5 or 10 min) axis ceilings
+  const depthStepM = 5;
+  const axisMaxDepthM = Math.max(
+    depthStepM,
+    Math.ceil(Math.max(profile.maxDepthM, 1) / depthStepM) * depthStepM,
+  );
+  const timeStepMin = isCompact
+    ? profile.maxElapsedS <= 25 * 60
+      ? 5
+      : 10
+    : profile.maxElapsedS <= 35 * 60
+      ? 5
+      : 10;
+  const timeStepS = timeStepMin * 60;
+  const axisMaxElapsedS = Math.max(
+    timeStepS,
+    Math.ceil(Math.max(profile.maxElapsedS, 1) / timeStepS) * timeStepS,
+  );
+
   // Precompute all SVG paths in useMemo so scrubbing/tapping never rebuilds path strings
   const geometry = useMemo(() => {
     if (profile.points.length === 0) return null;
 
-    const toX = (p: PlottedProfilePoint) => padLeft + p.xRatio * plotW;
-    const toY = (p: PlottedProfilePoint) => padTop + p.yRatio * plotH;
+    const toX = (p: PlottedProfilePoint) => padLeft + (p.elapsedS / axisMaxElapsedS) * plotW;
+    const toY = (p: PlottedProfilePoint) => padTop + (p.depthM / axisMaxDepthM) * plotH;
 
     const tempPoints = profile.points.filter((p) => p.tempC != null);
     const minTempC =
@@ -206,14 +225,14 @@ export const DiveProfileChart = memo(function DiveProfileChart({
       maxTempC,
       tempSpan,
     };
-  }, [profile, padLeft, padTop, plotW, plotH]);
+  }, [profile, padLeft, padTop, plotW, plotH, axisMaxElapsedS, axisMaxDepthM]);
 
   if (!geometry || profile.points.length === 0) {
     return null;
   }
 
-  const toX = (p: PlottedProfilePoint) => padLeft + p.xRatio * plotW;
-  const toY = (p: PlottedProfilePoint) => padTop + p.yRatio * plotH;
+  const toX = (p: PlottedProfilePoint) => padLeft + (p.elapsedS / axisMaxElapsedS) * plotW;
+  const toY = (p: PlottedProfilePoint) => padTop + (p.depthM / axisMaxDepthM) * plotH;
 
   function selectAtClientX(clientX: number) {
     const svg = svgRef.current;
@@ -222,9 +241,11 @@ export const DiveProfileChart = memo(function DiveProfileChart({
     if (rect.width <= 0) return;
     const scaleX = svgW / rect.width;
     const svgX = (clientX - rect.left) * scaleX;
-    const ratio = (svgX - padLeft) / plotW;
-    const nearest = findNearestProfilePoint(profile.points, ratio);
-    setSelected(nearest);
+    const axisRatio = (svgX - padLeft) / plotW;
+    const targetElapsedS = axisRatio * axisMaxElapsedS;
+    const pointRatio = profile.maxElapsedS > 0 ? targetElapsedS / profile.maxElapsedS : 0;
+    const interpolated = interpolateProfilePoint(profile.points, pointRatio);
+    setSelected(interpolated);
   }
 
   function handlePointerDown(e: PointerEvent<SVGSVGElement>) {
@@ -270,8 +291,15 @@ export const DiveProfileChart = memo(function DiveProfileChart({
     }
   }
 
-  const yTicks = [0, 0.25, 0.5, 0.75, 1];
-  const xTicks = isCompact ? [0, 0.33, 0.66, 1] : [0, 0.2, 0.4, 0.6, 0.8, 1];
+  const yDepthTicks: number[] = [];
+  for (let d = 0; d <= axisMaxDepthM; d += depthStepM) {
+    yDepthTicks.push(d);
+  }
+  const xTimeTicksS: number[] = [];
+  for (let s = 0; s <= axisMaxElapsedS; s += timeStepS) {
+    xTimeTicksS.push(s);
+  }
+  const tempTicks = [0, 0.25, 0.5, 0.75, 1];
   const effectiveTotalDuration = totalDurationS ?? profile.maxElapsedS;
 
   const toggleLayer = (key: keyof ChartLayerPrefs) =>
@@ -396,19 +424,20 @@ export const DiveProfileChart = memo(function DiveProfileChart({
             </linearGradient>
           </defs>
 
-          {/* Horizontal Depth Gridlines & Left Depth Axis */}
-          {yTicks.map((ratio) => {
-            const y = padTop + ratio * plotH;
-            const depthVal = convertDepth(ratio * profile.maxDepthM, unitSystem);
+          {/* Horizontal Depth Gridlines & Left Depth Axis (fixed every 5 m) */}
+          {yDepthTicks.map((depthM) => {
+            const y = padTop + (depthM / axisMaxDepthM) * plotH;
+            const depthVal =
+              unitSystem === 'imperial' ? Math.round(convertDepth(depthM, unitSystem)) : depthM;
             return (
-              <g key={`y-${ratio}`}>
+              <g key={`y-${depthM}`}>
                 <line
                   x1={padLeft}
                   y1={y}
                   x2={svgW - padRight}
                   y2={y}
                   stroke="#e2e8f0"
-                  strokeDasharray={ratio === 0 ? undefined : '4 4'}
+                  strokeDasharray={depthM === 0 ? undefined : '4 4'}
                 />
                 <text
                   x={padLeft - 6}
@@ -426,7 +455,7 @@ export const DiveProfileChart = memo(function DiveProfileChart({
           {/* Right Temperature Axis */}
           {layers.showTemp &&
             geometry.hasTemp &&
-            yTicks.map((ratio) => {
+            tempTicks.map((ratio) => {
               const y = padTop + ratio * plotH;
               const tempC = geometry.maxTempC - ratio * geometry.tempSpan;
               const dispTemp = Math.round(convertTemp(tempC, unitSystem));
@@ -443,20 +472,29 @@ export const DiveProfileChart = memo(function DiveProfileChart({
               );
             })}
 
-          {/* Bottom Time Axis */}
-          {xTicks.map((ratio) => {
-            const x = padLeft + ratio * plotW;
-            const sec = Math.round(ratio * profile.maxElapsedS);
+          {/* Vertical Time Gridlines & Bottom Time Axis (fixed every 5 or 10 min) */}
+          {xTimeTicksS.map((sec) => {
+            const x = padLeft + (sec / axisMaxElapsedS) * plotW;
             return (
-              <text
-                key={`x-${ratio}`}
-                x={x}
-                y={svgH - 6}
-                textAnchor="middle"
-                className="fill-slate-600 text-[11px] tabular-telemetry"
-              >
-                {formatElapsedMmSs(sec)}
-              </text>
+              <g key={`x-${sec}`}>
+                <line
+                  x1={x}
+                  y1={padTop}
+                  x2={x}
+                  y2={padTop + plotH}
+                  stroke="#e2e8f0"
+                  strokeOpacity={sec === 0 ? 0.9 : 0.6}
+                  strokeDasharray={sec === 0 ? undefined : '3 4'}
+                />
+                <text
+                  x={x}
+                  y={svgH - 6}
+                  textAnchor="middle"
+                  className="fill-slate-600 text-[11px] tabular-telemetry"
+                >
+                  {formatElapsedMmSs(sec)}
+                </text>
+              </g>
             );
           })}
 
@@ -466,8 +504,8 @@ export const DiveProfileChart = memo(function DiveProfileChart({
           {/* Deco / Safety Stops Reference Lines */}
           {layers.showStops &&
             decoStops.map((stop, idx) => {
-              if (stop.depth_m > profile.maxDepthM) return null;
-              const y = padTop + (stop.depth_m / profile.maxDepthM) * plotH;
+              if (stop.depth_m > axisMaxDepthM) return null;
+              const y = padTop + (stop.depth_m / axisMaxDepthM) * plotH;
               return (
                 <g key={`stop-${idx}`}>
                   <line

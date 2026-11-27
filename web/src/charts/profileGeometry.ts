@@ -159,3 +159,54 @@ export function findNearestProfilePoint(
   const curr = points[lo];
   return Math.abs(prev.xRatio - clamped) <= Math.abs(curr.xRatio - clamped) ? prev : curr;
 }
+
+/**
+ * Returns an exact linearly-interpolated point anywhere along the dive curve for a given
+ * normalized xRatio (0..1), so users can click or scrub smoothly even on sparse segments
+ * (including intermediate positions on red ascent-alert segments).
+ */
+export function interpolateProfilePoint(
+  points: PlottedProfilePoint[],
+  targetXRatio: number,
+): PlottedProfilePoint | null {
+  if (points.length === 0) return null;
+  if (points.length === 1) return points[0];
+  const clamped = Math.max(0, Math.min(1, targetXRatio));
+
+  if (clamped <= points[0].xRatio) return points[0];
+  const last = points[points.length - 1];
+  if (clamped >= last.xRatio) return last;
+
+  let lo = 0;
+  let hi = points.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (points[mid].xRatio < clamped) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+
+  const next = points[lo];
+  const prev = points[Math.max(0, lo - 1)];
+  const span = next.xRatio - prev.xRatio;
+  if (span <= 0) return next;
+
+  const alpha = (clamped - prev.xRatio) / span;
+  const lerp = (a: number, b: number) => a + (b - a) * alpha;
+  const lerpNullable = (a: number | null, b: number | null) =>
+    a != null && b != null ? Math.round(lerp(a, b) * 10) / 10 : (b ?? a);
+
+  return {
+    index: next.index,
+    elapsedS: Math.round(lerp(prev.elapsedS, next.elapsedS)),
+    depthM: Math.round(lerp(prev.depthM, next.depthM) * 100) / 100,
+    tempC: lerpNullable(prev.tempC, next.tempC),
+    pressureBar: lerpNullable(prev.pressureBar, next.pressureBar),
+    ascentRateMMin: next.ascentRateMMin,
+    exceedsAscentLimit: next.exceedsAscentLimit,
+    xRatio: clamped,
+    yRatio: lerp(prev.yRatio, next.yRatio),
+  };
+}
