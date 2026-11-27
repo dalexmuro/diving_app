@@ -378,13 +378,70 @@ export const DiveProfileChart = memo(function DiveProfileChart({
     return Math.max(0, Math.min(1, (svgX - padLeft) / plotW));
   }
 
-  function selectAtClientX(clientX: number) {
-    const axisRatio = clientXToAxisRatio(clientX);
-    if (axisRatio == null) return;
+  function selectAtClientPoint(clientX: number, clientY: number) {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    const svgX = ((clientX - rect.left) / rect.width) * svgW;
+    const svgY = ((clientY - rect.top) / rect.height) * svgH;
+
+    // 1. 2D closest-point-on-segment projection for nearby segments (makes steep/vertical red ascent lines effortless to click & scrub at any height)
+    const hitRadiusPx = 28;
+    const hitRadiusSq = hitRadiusPx * hitRadiusPx;
+    let bestDistSq = hitRadiusSq;
+    let bestPoint: PlottedProfilePoint | null = null;
+
+    for (const seg of profile.segments) {
+      const ax = toX(seg.from);
+      const bx = toX(seg.to);
+      // Skip segments outside horizontal search band
+      if (Math.max(ax, bx) < svgX - hitRadiusPx || Math.min(ax, bx) > svgX + hitRadiusPx) {
+        continue;
+      }
+      const ay = toY(seg.from);
+      const by = toY(seg.to);
+      const dx = bx - ax;
+      const dy = by - ay;
+      const lenSq = dx * dx + dy * dy;
+      const t =
+        lenSq > 0
+          ? Math.max(0, Math.min(1, ((svgX - ax) * dx + (svgY - ay) * dy) / lenSq))
+          : 0;
+      const px = ax + t * dx;
+      const py = ay + t * dy;
+      const distSq = (svgX - px) * (svgX - px) + (svgY - py) * (svgY - py);
+
+      if (distSq < bestDistSq) {
+        bestDistSq = distSq;
+        const lerp = (a: number, b: number) => a + (b - a) * t;
+        const lerpNullable = (a: number | null, b: number | null) =>
+          a != null && b != null ? Math.round(lerp(a, b) * 10) / 10 : (b ?? a);
+        bestPoint = {
+          index: seg.to.index,
+          elapsedS: Math.round(lerp(seg.from.elapsedS, seg.to.elapsedS)),
+          depthM: Math.round(lerp(seg.from.depthM, seg.to.depthM) * 100) / 100,
+          tempC: lerpNullable(seg.from.tempC, seg.to.tempC),
+          pressureBar: lerpNullable(seg.from.pressureBar, seg.to.pressureBar),
+          ascentRateMMin: seg.to.ascentRateMMin,
+          exceedsAscentLimit: seg.exceedsAscentLimit,
+          xRatio: lerp(seg.from.xRatio, seg.to.xRatio),
+          yRatio: lerp(seg.from.yRatio, seg.to.yRatio),
+        };
+      }
+    }
+
+    if (bestPoint) {
+      setSelected(bestPoint);
+      return;
+    }
+
+    // 2. Fallback to horizontal X interpolation when clicking in open chart space above/below the curve
+    const axisRatio = Math.max(0, Math.min(1, (svgX - padLeft) / plotW));
     const targetElapsedS = viewStartS + axisRatio * viewSpanS;
     const pointRatio = profile.maxElapsedS > 0 ? targetElapsedS / profile.maxElapsedS : 0;
-    const interpolated = interpolateProfilePoint(profile.points, pointRatio);
-    setSelected(interpolated);
+    setSelected(interpolateProfilePoint(profile.points, pointRatio));
   }
 
   function handlePointerDown(e: PointerEvent<SVGSVGElement>) {
@@ -410,7 +467,7 @@ export const DiveProfileChart = memo(function DiveProfileChart({
     }
 
     draggingRef.current = true;
-    selectAtClientX(e.clientX);
+    selectAtClientPoint(e.clientX, e.clientY);
   }
 
   function handlePointerMove(e: PointerEvent<SVGSVGElement>) {
@@ -445,7 +502,7 @@ export const DiveProfileChart = memo(function DiveProfileChart({
     }
 
     if (!draggingRef.current) return;
-    selectAtClientX(e.clientX);
+    selectAtClientPoint(e.clientX, e.clientY);
   }
 
   function handlePointerUp(e: PointerEvent<SVGSVGElement>) {
